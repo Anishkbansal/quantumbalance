@@ -308,6 +308,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
         }
       }
+      
+      return response.data;
     } catch (err: any) {
       setError(err.response?.data?.message || 'Verification failed');
       throw err;
@@ -327,10 +329,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (response.data.success) {
-        // In a real app, we wouldn't do anything with the code here
-        // It would be sent directly to the user's email
         console.log('Verification code sent');
       }
+      
+      return response.data;
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to send verification code');
       throw err;

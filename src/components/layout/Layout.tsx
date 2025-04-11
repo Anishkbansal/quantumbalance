@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users, FileText, CreditCard, Stethoscope, LogOut, AudioWaveform as Waveform, Info, FlaskRound as Flask, Package, Menu, X, LogIn, Zap, User, AlertCircle, MessageSquare } from 'lucide-react';
 import VerifyEmailButton from './VerifyEmailButton';
+import Footer from './Footer';
 import { useAuth } from '../../contexts/AuthContext';
 
 // Define interfaces for navigation and SidebarContent
@@ -271,8 +272,11 @@ const Layout = () => {
         </div>
 
         {/* Main content */}
-        <div className="flex-1 p-4 md:p-8 overflow-x-hidden mt-12 md:mt-0">
-          <Outlet />
+        <div className="flex-1 overflow-x-hidden mt-12 md:mt-0 flex flex-col min-h-screen">
+          <div className="flex-grow p-4 md:p-8">
+            <Outlet />
+          </div>
+          <Footer />
         </div>
       </div>
     </div>

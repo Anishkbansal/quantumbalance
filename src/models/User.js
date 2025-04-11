@@ -155,6 +155,14 @@ const UserSchema = new Schema({
     type: String,
     select: false, // Hide this field by default in query results
   },
+  verificationCode: {
+    type: String,
+    select: true,
+  },
+  verificationCodeExpires: {
+    type: Date,
+    select: true,
+  },
   // Stripe customer ID for payment processing
   stripeCustomerId: {
     type: String,

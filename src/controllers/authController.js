@@ -6,6 +6,8 @@ import Prescription from '../models/Prescription.js';
 import HealthQuestionnaire from '../models/HealthQuestionnaire.js';
 import mongoose from 'mongoose';
 import WellnessEntry from '../models/WellnessEntry.js';
+import { sendVerificationEmail, notifyAllAdmins } from '../utils/emailService.js';
+import crypto from 'crypto';
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -401,9 +403,6 @@ export const verifyEmail = async (req, res) => {
       });
     }
 
-    // For demo, we're using a fixed code
-    const VERIFICATION_CODE = '123456'; 
-
     // Find user by email
     const user = await User.findOne({ email });
 
@@ -422,20 +421,35 @@ export const verifyEmail = async (req, res) => {
       });
     }
 
-    // Check verification code
-    if (code !== VERIFICATION_CODE) {
+    // Check if verification code exists and is valid
+    if (!user.verificationCode || user.verificationCode !== code) {
       return res.status(400).json({
         success: false,
         message: 'Invalid verification code'
       });
     }
 
+    // Check if verification code has expired
+    if (user.verificationCodeExpires && user.verificationCodeExpires < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification code has expired. Please request a new one.'
+      });
+    }
+
     // Update user verification status
     user.isVerified = true;
+    user.verificationCode = undefined;
+    user.verificationCodeExpires = undefined;
     await user.save();
 
     // Generate token for auto-login after verification
     const token = generateToken(user._id);
+
+    // Send notification to admins about the new verified user
+    notifyAllAdmins(user).catch(err => {
+      console.error('Error sending admin notifications:', err);
+    });
 
     return res.status(200).json({
       success: true,
@@ -496,14 +510,20 @@ export const sendVerificationCode = async (req, res) => {
       });
     }
 
-    // In a real app, we would generate a random code and send an email
-    // For the demo, we'll use the fixed code '123456'
+    // Generate a random 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store the verification code and its expiry in the user document
+    user.verificationCode = verificationCode;
+    user.verificationCodeExpires = Date.now() + 30 * 60 * 1000; // 30 minutes
+    await user.save();
+    
+    // Send the verification code via email
+    await sendVerificationEmail(user.email, user.name, verificationCode);
     
     return res.status(200).json({
       success: true,
-      message: 'Verification code sent successfully',
-      // For demonstration purposes only! In production, never send the code back to the client
-      demoCode: '123456'
+      message: 'Verification code sent successfully'
     });
   } catch (error) {
     console.error('Send verification error:', error);

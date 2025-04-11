@@ -49,6 +49,7 @@ const App: React.FC = () => {
             <Route path="/about" element={<About />} />
             <Route path="/scientific-evidence" element={<ScientificEvidence />} />
             <Route path="/scalar-healing" element={<ScalarHealing />} />
+            <Route path="/packages" element={<Packages />} />
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
@@ -59,7 +60,6 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute />}>
               {/* Routes that also require email verification */}
               <Route element={<VerificationRequired />}>
-                <Route path="/packages" element={<Packages />} />
                 <Route path="/health-questionnaire" element={<HealthQuestionnaire />} />
                 <Route path="/questionnaire-history" element={<QuestionnaireHistory />} />
                 <Route path="/questionnaire-details/:id" element={<QuestionnaireDetails />} />
@@ -74,13 +74,13 @@ const App: React.FC = () => {
             
             {/* Admin routes */}
             <Route element={<AdminProtectedRoute />}>
-              <Route path="/admin" element={<UserManagement />} />
+              <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/create-user" element={<CreateUser />} />
               <Route path="/admin/messages" element={<AdminMessages />} />
             </Route>
             
-            {/* Catch-all route */}
+            {/* 404 route */}
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

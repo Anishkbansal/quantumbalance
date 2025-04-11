@@ -80,52 +80,12 @@ interface GroupedPrescription {
   frequencies: PrescriptionFrequency[];
 }
 
-// Add phone number formatting function
+// Update phone number formatting function to preserve original format
 const formatPhoneNumber = (phone: string, country?: string) => {
   if (!phone) return 'Not provided';
   
-  // Remove all non-digit characters
-  const digitsOnly = phone.replace(/\D/g, '');
-  
-  // Format based on country
-  switch (country?.toUpperCase()) {
-    case 'US':
-      // US format: (123) 456-7890
-      if (digitsOnly.length === 10) {
-        return `(${digitsOnly.substring(0, 3)}) ${digitsOnly.substring(3, 6)}-${digitsOnly.substring(6)}`;
-      }
-      break;
-    case 'IN':
-      // India format: 12345 67890
-      if (digitsOnly.length === 10) {
-        return `${digitsOnly.substring(0, 5)} ${digitsOnly.substring(5)}`;
-      }
-      break;
-    case 'GB':
-      // UK format: 01234 567890
-      if (digitsOnly.length === 11) {
-        return `${digitsOnly.substring(0, 5)} ${digitsOnly.substring(5)}`;
-      }
-      break;
-    case 'AU':
-      // Australia format: 0412 345 678
-      if (digitsOnly.length === 10) {
-        return `${digitsOnly.substring(0, 4)} ${digitsOnly.substring(4, 7)} ${digitsOnly.substring(7)}`;
-      }
-      break;
-    case 'DE':
-      // Germany format: 01234 567890
-      if (digitsOnly.length === 11) {
-        return `${digitsOnly.substring(0, 5)} ${digitsOnly.substring(5)}`;
-      }
-      break;
-    default:
-      // Default format: +1234567890
-      return `+${digitsOnly}`;
-  }
-  
-  // If no specific format matches, return with country code
-  return `+${digitsOnly}`;
+  // Simply return the phone number as stored - no formatting/processing
+  return phone;
 };
 
 const UserManagement: React.FC = () => {

@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import mongoose from 'mongoose';
 import { checkAllPackagesExpiry } from '../server.js';
 import { generateAIPrescription } from '../utils/prescriptionService.js';
+import Prescription from '../models/Prescription.js';
 
 // Get all available packages
 const getAllPackages = async (req, res) => {
@@ -1206,69 +1207,6 @@ const forceCheckExpiredPackages = async (req, res) => {
   }
 };
 
-// Export generateAIPrescription so it can be imported by other files
-export const generateAIPrescription = async (userId) => {
-  try {
-    console.log(`Generating AI prescription for user ${userId}`);
-    // Find the user with their health questionnaire
-    const user = await User.findById(userId).populate('healthQuestionnaire');
-    
-    if (!user) {
-      console.error(`User ${userId} not found`);
-      return {
-        success: false,
-        message: 'User not found'
-      };
-    }
-    
-    if (!user.healthQuestionnaire) {
-      console.error(`User ${userId} has no health questionnaire`);
-      return {
-        success: false,
-        message: 'No health questionnaire found for user'
-      };
-    }
-    
-    // Create a new prescription
-    const newPrescription = new Prescription({
-      user: userId,
-      packageType: user.packageType,
-      packageId: user.activePackageId,
-      frequencies: [],
-      status: 'active',
-      questionnaire: user.healthQuestionnaire._id,
-      notes: '',
-      version: 1
-    });
-    
-    // Generate frequencies based on health questionnaire data
-    const questionnaireData = user.healthQuestionnaire;
-    const frequencies = await generateFrequenciesFromQuestionnaire(questionnaireData);
-    
-    newPrescription.frequencies = frequencies;
-    await newPrescription.save();
-    
-    // Mark the user's active package as having a prescription
-    const userPackage = await UserPackage.findById(user.activePackageId);
-    if (userPackage) {
-      userPackage.prescriptionsUsed += 1;
-      await userPackage.save();
-    }
-    
-    return {
-      success: true,
-      prescription: newPrescription
-    };
-    
-  } catch (error) {
-    console.error('Error generating AI prescription:', error);
-    return {
-      success: false,
-      message: error.message || 'Failed to generate prescription'
-    };
-  }
-};
-
 // Helper function to generate frequencies based on questionnaire data
 const generateFrequenciesFromQuestionnaire = async (questionnaireData) => {
   // Implementation of AI frequency generation logic
@@ -1343,5 +1281,6 @@ export {
   renewPackage,
   getRenewalHistory,
   testExpiredPackages,
-  forceCheckExpiredPackages
+  forceCheckExpiredPackages,
+  generateFrequenciesFromQuestionnaire
 }; 

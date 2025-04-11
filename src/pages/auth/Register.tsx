@@ -65,6 +65,7 @@ interface Country {
   code: string;
 }
 
+// Define the Register component
 const Register: React.FC = () => {
   const navigate = useNavigate();
   const { register: registerUser } = useAuth();
@@ -75,6 +76,7 @@ const Register: React.FC = () => {
   const [countries, setCountries] = useState<Country[]>([]);
   const [loadingCountries, setLoadingCountries] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [formattedPhoneNumber, setFormattedPhoneNumber] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<RegisterFormData>({
@@ -182,6 +184,20 @@ const Register: React.FC = () => {
     fileInputRef.current?.click();
   };
 
+  // Update to store the formatted phone number display
+  const handlePhoneChange = (value: string, country: any, e: any, formattedValue: string) => {
+    setPhoneNumber(value); // This is still what react-phone-input-2 provides
+    
+    // Create a formatted version with proper symbols for display and storage
+    let formatted = '';
+    if (country && country.dialCode) {
+      formatted = `+${country.dialCode} ${value.substring(country.dialCode.length)}`;
+    } else {
+      formatted = `+${value}`;
+    }
+    setFormattedPhoneNumber(formatted);
+  };
+
   const onSubmit = async (data: RegisterFormData) => {
     try {
       setLoading(true);
@@ -211,7 +227,7 @@ const Register: React.FC = () => {
         data.email, 
         data.username, 
         data.password, 
-        phoneNumber,
+        formattedPhoneNumber || phoneNumber, // Send the formatted number, fall back to raw number if needed
         previewUrl || undefined
       );
       
@@ -363,7 +379,7 @@ const Register: React.FC = () => {
                   <PhoneInput
                     country={'us'}
                     value={phoneNumber}
-                    onChange={(phone) => setPhoneNumber(phone)}
+                    onChange={handlePhoneChange}
                     inputProps={{
                       name: 'phone',
                       id: 'phone',

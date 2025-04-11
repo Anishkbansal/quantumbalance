@@ -14,6 +14,7 @@ import audioFilesRoutes from './routes/audioFiles.js';
 import prescriptionsRoutes from './routes/prescriptions.js';
 import messageRoutes from './routes/messageRoutes.js';
 import stripeRoutes from './routes/stripeRoutes.js';
+import scalarRoutes from './routes/scalarRoutes.js';
 import cron from 'node-cron';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
@@ -81,6 +82,7 @@ app.use('/api/audio', audioRoutes);
 app.use('/api/audio-files', audioFilesRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/stripe', stripeRoutes);
+app.use('/api/scalar', scalarRoutes);
 
 // Serve static files from the public directory
 app.use(express.static('public'));

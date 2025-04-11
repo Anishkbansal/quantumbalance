@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import User from '../models/User.js';
 import Package from '../models/Package.js';
 import UserPackage from '../models/UserPackage.js';
-import { createCustomEmailTemplate, sendEmail } from '../utils/emailService.js';
+import { createCustomEmailTemplate, sendEmail, sendPaymentConfirmation, sendPaymentNotificationToAdmin } from '../utils/emailService.js';
 import mongoose from 'mongoose';
 import { generateAIPrescription } from '../utils/prescriptionService.js';
 
@@ -656,6 +656,18 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
     } else {
       console.log(`User ${userId} has no health questionnaire. No AI prescription generated.`);
     }
+    
+    console.log('User package created. Sending confirmation emails...');
+    
+    // Send payment confirmation email to user
+    sendPaymentConfirmation(user, package_, { id: paymentIntentId }).catch(err => {
+      console.error('Error sending payment confirmation email:', err);
+    });
+    
+    // Send notification to admin
+    sendPaymentNotificationToAdmin(user, package_, { id: paymentIntentId }).catch(err => {
+      console.error('Error sending payment notification to admin:', err);
+    });
     
     return res.status(201).json({
       success: true,

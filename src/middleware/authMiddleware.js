@@ -76,8 +76,14 @@ export const adminOnly = (req, res, next) => {
   }
 };
 
-// Verify email middleware
+// Verify email middleware - BYPASSED FOR DEVELOPMENT
 export const verificationRequired = (req, res, next) => {
+  // Always proceed to the next middleware/route handler regardless of verification status
+  // DEVELOPMENT MODE: Email verification is completely bypassed
+  console.log('Email verification bypassed for development');
+  return next();
+  
+  /* Original code (commented out):
   // Skip verification check for admin users
   if (req.user && req.user.isAdmin) {
     return next();
@@ -95,4 +101,5 @@ export const verificationRequired = (req, res, next) => {
       email: req.user?.email
     });
   }
+  */
 }; 

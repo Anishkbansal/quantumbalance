@@ -9,7 +9,7 @@
     "@mui/icons-material": "^7.0.1",
     "@mui/material": "^7.0.1",
     "@reduxjs/toolkit": "^2.6.1",
-    "@sendgrid/mail": "^8.1.4",
+    "@sendgrid/mail": "^8.1.5",
     "@stripe/react-stripe-js": "^2.9.0",
     "@stripe/stripe-js": "^1.54.2",
     "@testing-library/dom": "^9.3.4",
