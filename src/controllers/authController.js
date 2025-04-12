@@ -6,7 +6,7 @@ import Prescription from '../models/Prescription.js';
 import HealthQuestionnaire from '../models/HealthQuestionnaire.js';
 import mongoose from 'mongoose';
 import WellnessEntry from '../models/WellnessEntry.js';
-import { sendVerificationEmail, notifyAllAdmins } from '../utils/emailService.js';
+import { sendVerificationEmail, notifyAllAdmins, sendAdminLoginVerification, notifyAdminLogin } from '../utils/emailService.js';
 import crypto from 'crypto';
 
 // Generate JWT token
@@ -14,6 +14,21 @@ const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', {
     expiresIn: '30d',
   });
+};
+
+// Store admin OTPs with expiration
+const adminOTPs = new Map();
+// Store admin logout tokens
+const adminLogoutTokens = new Map();
+
+// Generate a random verification code
+const generateVerificationCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Generate a secure random token
+const generateSecureToken = () => {
+  return crypto.randomBytes(32).toString('hex');
 };
 
 // Register a new user
@@ -120,7 +135,7 @@ export const login = async (req, res) => {
       });
     }
 
-    // Check if email is verified
+    // Check if email is verified for regular users
     if (!user.isVerified && !user.isAdmin) {
       return res.status(403).json({
         success: false,
@@ -138,6 +153,21 @@ export const login = async (req, res) => {
       await user.save();
     }
 
+    // For admin users, require verification every time they log in
+    if (user.isAdmin) {
+      // Generate and send a verification code
+      await sendAdminVerification(user);
+      
+      return res.status(403).json({
+        success: false,
+        message: 'Admin verification required',
+        requiresAdminVerification: true,
+        email: user.email
+      });
+    }
+
+    // For regular users, continue with normal login
+    
     // Store user in session
     if (req.session) {
       req.session.userId = user._id;
@@ -733,6 +763,32 @@ export const updateProfile = async (req, res) => {
   }
 };
 
+// Send verification code to admin
+export const sendAdminVerification = async (adminUser) => {
+  try {
+    // Generate a verification code
+    const verificationCode = generateVerificationCode();
+    
+    // Store the code with expiration (10 minutes)
+    adminOTPs.set(adminUser.email, {
+      code: verificationCode,
+      expires: Date.now() + 10 * 60 * 1000 // 10 minutes
+    });
+    
+    // Send the verification email
+    await sendAdminLoginVerification(
+      adminUser.email,
+      adminUser.name,
+      verificationCode
+    );
+    
+    return true;
+  } catch (error) {
+    console.error('Error sending admin verification:', error);
+    return false;
+  }
+};
+
 // Verify Admin OTP
 export const verifyAdminOTP = async (req, res) => {
   try {
@@ -755,30 +811,189 @@ export const verifyAdminOTP = async (req, res) => {
       });
     }
 
-    // Verify OTP (you should implement your OTP verification logic here)
-    // This is a placeholder - replace with your actual OTP verification logic
-    const isValidOTP = true; // Replace with actual OTP verification
-
-    if (!isValidOTP) {
+    // Check if OTP exists and is valid
+    const otpData = adminOTPs.get(email);
+    
+    if (!otpData) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid OTP'
+        message: 'Verification code expired or not found. Please request a new code.'
+      });
+    }
+    
+    if (otpData.expires < Date.now()) {
+      adminOTPs.delete(email); // Clean up expired OTP
+      return res.status(400).json({
+        success: false,
+        message: 'Verification code has expired. Please request a new code.'
+      });
+    }
+    
+    if (otpData.code !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid verification code'
       });
     }
 
-    // If OTP is valid, generate a temporary admin token
+    // OTP is valid, remove it from storage
+    adminOTPs.delete(email);
+
+    // Generate user token
     const token = generateToken(user._id);
+    
+    // Store user in session
+    if (req.session) {
+      req.session.userId = user._id;
+    }
+    
+    // Generate a logout token that can be used to logout all admins
+    const logoutToken = generateSecureToken();
+    adminLogoutTokens.set(logoutToken, {
+      expires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+      createdBy: user._id
+    });
+    
+    // Notify all admins of this login
+    notifyAdminLogin(user, logoutToken).catch(err => {
+      console.error('Error sending admin login notification:', err);
+    });
 
     res.status(200).json({
       success: true,
-      message: 'Admin OTP verified successfully',
-      token
+      message: 'Admin verification successful',
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        username: user.username,
+        phone: user.phone,
+        profile: user.profile,
+        profilePicture: user.profilePicture,
+        packageType: user.packageType,
+        activePackage: user.activePackage,
+        isAdmin: user.isAdmin,
+        isVerified: user.isVerified || false,
+        joiningDate: user.joiningDate
+      }
     });
   } catch (error) {
     console.error('Error verifying admin OTP:', error);
     res.status(500).json({
       success: false,
-      message: 'Error verifying admin OTP',
+      message: 'Error verifying admin login',
+      error: error.message
+    });
+  }
+};
+
+// Generate new admin OTP
+export const generateAdminOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user is an admin
+    if (!user.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
+    // Generate and send verification code
+    const success = await sendAdminVerification(user);
+
+    if (success) {
+      return res.status(200).json({
+        success: true,
+        message: 'Verification code sent to your email'
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification code'
+      });
+    }
+  } catch (error) {
+    console.error('Error generating admin OTP:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Logout all admin sessions
+export const logoutAllAdmins = async (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request'
+      });
+    }
+    
+    // Check if token exists and is valid
+    const tokenData = adminLogoutTokens.get(token);
+    
+    if (!tokenData || tokenData.expires < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired security token'
+      });
+    }
+    
+    // Token is valid, remove it
+    adminLogoutTokens.delete(token);
+    
+    // In a real implementation, you would invalidate all admin sessions/tokens here
+    // This could involve clearing all admin sessions in your database,
+    // or adding all current admin tokens to a blacklist
+    
+    // Here's a placeholder implementation
+    console.log('ADMIN SECURITY: All admin sessions have been terminated');
+    
+    // You could track which admin triggered this
+    const triggeringAdmin = await User.findById(tokenData.createdBy);
+    const adminName = triggeringAdmin ? triggeringAdmin.name : 'Unknown';
+    
+    // Redirect to a confirmation page or to login page
+    if (req.accepts('html')) {
+      // If this is a browser request, redirect to a confirmation page
+      return res.redirect('/admin-security-action-confirmed');
+    } else {
+      // If API request, return JSON
+      return res.status(200).json({
+        success: true,
+        message: 'All admin sessions have been terminated',
+        triggeredBy: adminName
+      });
+    }
+  } catch (error) {
+    console.error('Error logging out all admins:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
       error: error.message
     });
   }

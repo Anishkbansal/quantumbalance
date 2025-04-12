@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../../contexts/AuthContext';
 import { Send, AlertCircle, Check, CheckCheck } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { API_URL } from '../../config/constants';
 
 interface Message {
   _id: string;
@@ -46,8 +47,12 @@ const UserMessaging: React.FC = () => {
       const token = localStorage.getItem('token');
       
       // Find the admin (for user, we're always talking to the admin)
-      const response = await axios.get(`http://localhost:5000/api/messages/conversation/${user._id}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await axios.get(`${API_URL}/messages/conversation/${user._id}`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        withCredentials: true
       });
       
       if (response.data.success) {
@@ -202,33 +207,31 @@ const UserMessaging: React.FC = () => {
         )
       );
       
-      // Decrease unread count
-      setUnreadCount(prev => Math.max(0, prev - 1));
-      
-      // Now actually try to update on the server
-      try {
-        console.log(`Calling API to mark message as read: ${messageId}`);
-        
-        const response = await axios.put(
-          `http://localhost:5000/api/messages/read/${messageId}`, 
-          {}, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        
-        console.log(`API response:`, response.data);
-        
-        if (!response.data.success) {
-          console.warn(`Server reported non-success when marking message as read: ${response.data.message}`);
-        }
-      } catch (apiError: any) {
-        console.error(`Failed API call to mark message as read for ${messageId}:`, apiError);
-        console.error(`Error response:`, apiError.response?.data);
-        
-        // We'll still keep the UI updated for better UX
-        // In a production app, you might want to add a toast message or other notification here
+      // Update unread count locally for better UX
+      if (unreadCount > 0) {
+        setUnreadCount(prevCount => prevCount - 1);
       }
+      
+      // Make API call to mark message as read
+      await axios.post(
+        `${API_URL}/messages/read/${messageId}`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          withCredentials: true
+        }
+      );
     } catch (err) {
-      console.error(`Error in markMessageAsRead function for ${messageId}:`, err);
+      console.error('Error marking message as read:', err);
+      // Don't show error to user for background task, but revert UI change
+      setVisibleMessages(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(messageId);
+        return newSet;
+      });
     }
   };
   
@@ -236,27 +239,37 @@ const UserMessaging: React.FC = () => {
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newMessage.trim() || !user) return;
+    if (!user || !newMessage.trim() || !hasActivePackage) return;
     
     try {
+      setLoading(true);
       const token = localStorage.getItem('token');
       
+      // Send message to admin via API
       const response = await axios.post(
-        'http://localhost:5000/api/messages/to-admin',
-        { content: newMessage },
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${API_URL}/messages/to-admin`,
+        { content: newMessage.trim() },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          withCredentials: true
+        }
       );
       
       if (response.data.success) {
+        // Reset form and update UI
         setNewMessage('');
-        // Refresh the messages to include the new one
-        fetchMessages();
+        fetchMessages(); // Refresh messages to include the new one
       } else {
-        setError(response.data.message || 'Failed to send message');
+        throw new Error(response.data.message || 'Failed to send message');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Error sending message');
+      setError(err.response?.data?.message || err.message || 'Error sending message');
       console.error('Error sending message:', err);
+    } finally {
+      setLoading(false);
     }
   };
   
@@ -266,17 +279,23 @@ const UserMessaging: React.FC = () => {
     
     try {
       const token = localStorage.getItem('token');
-      
       const response = await axios.get(
-        'http://localhost:5000/api/messages/unread/count',
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${API_URL}/messages/unread/count`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          withCredentials: true
+        }
       );
       
       if (response.data.success) {
         setUnreadCount(response.data.count);
       }
     } catch (err) {
-      console.error('Error checking unread messages:', err);
+      console.error('Error fetching unread count:', err);
+      // Don't show error to user for this background task
     }
   };
   
@@ -307,59 +326,62 @@ const UserMessaging: React.FC = () => {
     
     try {
       const token = localStorage.getItem('token');
-      // Extract conversation ID from message ID using proper parsing
-      const messageId = messages[0]._id;
+      
+      // Get the conversation ID from the first message
+      // In our system, all messages in this view belong to the same conversation
+      const firstMessage = messages[0];
       let conversationId;
       
-      // Handle different message ID formats
-      if (messageId.includes('_msg_')) {
-        conversationId = messageId.split('_msg_')[0];
-      } else if (messageId.includes('_')) {
-        const parts = messageId.split('_');
-        parts.pop(); // Remove the index part
-        conversationId = parts.join('_');
+      if (firstMessage._id.includes('_msg_')) {
+        // If using composite IDs
+        conversationId = firstMessage._id.split('_msg_')[0];
       } else {
-        conversationId = messageId; // Assume the whole ID is the conversation ID
+        // If message doesn't have a conversation ID embedded,
+        // we can use the user's ID since all their messages are in one conversation with admin
+        conversationId = user._id;
       }
       
-      // Verify that conversationId is a valid MongoDB ObjectId (24 hex characters)
-      if (!/^[0-9a-fA-F]{24}$/.test(conversationId)) {
-        console.error(`Invalid conversation ID format: ${conversationId}`);
-        setError('Error: Invalid conversation format');
-        return;
-      }
-      
-      console.log(`Marking all messages in conversation ${conversationId} as read`);
-      
-      const response = await axios.put(
-        `http://localhost:5000/api/messages/conversation/${conversationId}/read`, 
-        {}, 
-        { headers: { Authorization: `Bearer ${token}` } }
+      // Update UI immediately for better UX
+      const unreadMessagesFromAdmin = messages.filter(
+        msg => msg.recipient === user._id && !msg.readByRecipient
       );
       
-      if (response.data.success) {
-        // Update all messages in local state
-        setMessages(prev => 
-          prev.map(msg => ({
-            ...msg,
-            readByRecipient: msg.recipient === user._id ? true : msg.readByRecipient
-          }))
-        );
-        
-        // Reset unread count
-        setUnreadCount(0);
-        
-        // Update visible messages set
-        const newVisibleSet = new Set(visibleMessages);
-        messages.forEach(msg => {
-          if (msg.recipient === user._id) {
-            newVisibleSet.add(msg._id);
-          }
+      unreadMessagesFromAdmin.forEach(msg => {
+        setVisibleMessages(prev => {
+          const newSet = new Set(prev);
+          newSet.add(msg._id);
+          return newSet;
         });
-        setVisibleMessages(newVisibleSet);
-      }
+      });
+      
+      // Update messages in state
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.recipient === user._id 
+            ? { ...msg, readByRecipient: true } 
+            : msg
+        )
+      );
+      
+      // Reset unread count
+      setUnreadCount(0);
+      
+      // Make API call to mark all messages in conversation as read
+      await axios.post(
+        `${API_URL}/messages/conversation/${conversationId}/read`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          withCredentials: true
+        }
+      );
     } catch (err) {
       console.error('Error marking all messages as read:', err);
+      // Don't show error to user, just fetch messages again to sync state
+      fetchMessages();
     }
   };
   

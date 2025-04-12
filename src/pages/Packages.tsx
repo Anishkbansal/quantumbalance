@@ -3,16 +3,11 @@ import { AlertCircle, Loader2, Gift, Check, RefreshCw, Clock, ArrowRight, Credit
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { formatCurrency } from '../utils/formatters';
 import StripeWrapper from '../components/payment/StripeWrapper';
 import { motion, AnimatePresence } from 'framer-motion';
-
-// Currency formatter helper
-const formatAmount = (amount: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  }).format(amount);
-};
+import { API_URL } from '../config/constants';
 
 // Format date helper
 const formatDate = (dateString: string) => {
@@ -59,6 +54,7 @@ export default function Packages() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, refreshUserData } = useAuth();
+  const { currency } = useCurrency();
   
   const [giftCode, setGiftCode] = useState('');
   const [isRedeeming, setIsRedeeming] = useState(false);
@@ -84,13 +80,18 @@ export default function Packages() {
     return 'per year';
   };
   
+  // Format amount using the user's preferred currency
+  const formatAmount = (amount: number) => {
+    return formatCurrency(amount, currency.code);
+  };
+  
   // Using useCallback to memoize these functions to avoid dependency issues
   const fetchPackages = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
-      const response = await axios.get('http://localhost:5000/api/packages/all');
+      const response = await axios.get(`${API_URL}/packages/all`);
       
       if (response.data.success) {
         // Process packages data to include UI-specific properties
@@ -100,7 +101,7 @@ export default function Packages() {
             // Instead of calling seedPackages, we'll do the API call directly here
             try {
               const seedResponse = await axios.post(
-                'http://localhost:5000/api/packages/seed',
+                `${API_URL}/packages/seed`,
                 {},
                 {
                   withCredentials: true,
@@ -172,7 +173,7 @@ export default function Packages() {
     
     try {
       const response = await axios.get(
-        'http://localhost:5000/api/packages/user/renewal-eligibility',
+        `${API_URL}/packages/user/renewal-eligibility`,
         {
           withCredentials: true,
           headers: {
@@ -202,7 +203,7 @@ export default function Packages() {
       setError(null);
       
       const response = await axios.post(
-        'http://localhost:5000/api/packages/user/renew',
+        `${API_URL}/packages/user/renew`,
         {
           newPackageId,
           paymentMethod: 'credit_card'
@@ -245,7 +246,7 @@ export default function Packages() {
       setLoading(true);
       
       const response = await axios.post(
-        'http://localhost:5000/api/packages/seed',
+        `${API_URL}/packages/seed`,
         {},
         {
           withCredentials: true,
@@ -312,24 +313,33 @@ export default function Packages() {
   // Add back the handleRedeemCode function that was accidentally removed
   const handleRedeemCode = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!giftCode) {
+      setError('Please enter a redemption code');
+      return;
+    }
+    
+    if (!user) {
+      navigate('/login', { 
+        state: { 
+          from: '/packages',
+          message: 'Please log in to redeem a code'
+        } 
+      });
+      return;
+    }
+    
     try {
       setIsRedeeming(true);
       setError(null);
-      setSuccess(null);
-
-      if (!giftCode.trim()) {
-        throw new Error('Please enter a gift code');
-      }
       
-      // Make API call to redeem gift code
       const response = await axios.post(
-        'http://localhost:5000/api/packages/redeem',
-        { giftCode: giftCode.trim() },
+        `${API_URL}/packages/redeem`,
+        { code: giftCode },
         {
           withCredentials: true,
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
           }
         }
       );

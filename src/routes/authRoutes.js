@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, logout, getUser, getAllUsers, getUserDetails, adminCreateUser, verifyEmail, sendVerificationCode, cleanupUnverifiedUsers, deleteAccount, sendDeletionCode, updateProfile, verifyAdminOTP } from '../controllers/authController.js';
+import { register, login, logout, getUser, getAllUsers, getUserDetails, adminCreateUser, verifyEmail, sendVerificationCode, cleanupUnverifiedUsers, deleteAccount, sendDeletionCode, updateProfile, verifyAdminOTP, generateAdminOTP, logoutAllAdmins } from '../controllers/authController.js';
 import { protect, adminOnly } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -30,6 +30,8 @@ router.get('/users/:userId', protect, adminOnly, getUserDetails);
 router.post('/admin/create-user', protect, adminOnly, adminCreateUser);
 router.post('/admin/cleanup-users', protect, adminOnly, cleanupUnverifiedUsers);
 router.post('/admin/verify-otp', verifyAdminOTP);
+router.post('/admin/generate-otp', generateAdminOTP);
+router.get('/admin/logout-all/:token', logoutAllAdmins);
 
 // Verification routes
 router.post('/verify-email', verifyEmail);

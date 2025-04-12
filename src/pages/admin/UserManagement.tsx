@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, User, Shield, Package, Mail, Calendar, Eye, EyeOff, AlertCircle, CheckCircle, Phone, MapPin, Activity, Stethoscope, Clipboard, RefreshCw, X, ChevronLeft, ChevronRight, Music, Upload, FolderOpen } from 'lucide-react';
 import WellnessGraph from '../../components/WellnessGraph';
+import { API_URL } from '../../config/constants';
 
 // User interface
 interface AdminUser {
@@ -126,7 +127,7 @@ const UserManagement: React.FC = () => {
         const token = localStorage.getItem('token');
         
         // Make API request with auth header
-        const response = await axios.get('http://localhost:5000/api/auth/users', {
+        const response = await axios.get(`${API_URL}/auth/users`, {
           withCredentials: true,
           headers: {
             Authorization: token ? `Bearer ${token}` : ''
@@ -286,7 +287,7 @@ const UserManagement: React.FC = () => {
     try {
       setAudioFileLoading(true);
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/audio-files', {
+      const response = await axios.get(`${API_URL}/audio-files`, {
         headers: { Authorization: `Bearer ${token}` },
         params: { search: audioSearch }
       });
@@ -344,7 +345,7 @@ const UserManagement: React.FC = () => {
       formData.append('frequencies', audioFrequencies);
       
       const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:5000/api/audio-files/upload', formData, {
+      const response = await axios.post(`${API_URL}/audio-files/upload`, formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -382,7 +383,7 @@ const UserManagement: React.FC = () => {
     
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`http://localhost:5000/api/audio-files/check`, {
+      const response = await axios.get(`${API_URL}/audio-files/check`, {
         headers: { Authorization: `Bearer ${token}` },
         params: { filename: audioFileName }
       });

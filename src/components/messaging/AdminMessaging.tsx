@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../../contexts/AuthContext';
 import { Send, Search, ChevronLeft, Clock, Check, CheckCheck, MessageSquare } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { API_URL } from '../../config/constants';
 
 interface Message {
   _id: string;
@@ -68,7 +69,7 @@ const AdminMessaging: React.FC = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       
-      const response = await axios.get('http://localhost:5000/api/messages/admin/conversations', {
+      const response = await axios.get(`${API_URL}/messages/admin/conversations`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

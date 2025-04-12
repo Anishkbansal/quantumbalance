@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { AlertCircle, CheckCircle, UserPlus } from 'lucide-react';
+import { API_URL } from '../../config/constants';
 
 interface FormData {
   name: string;
@@ -66,7 +67,7 @@ const CreateUser: React.FC = () => {
 
     try {
       // Send data to API
-      const response = await axios.post('http://localhost:5000/api/auth/admin/create-user', {
+      const response = await axios.post(`${API_URL}/auth/admin/create-user`, {
         name: formData.name,
         email: formData.email,
         username: formData.username,

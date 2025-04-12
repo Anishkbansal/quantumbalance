@@ -8,6 +8,7 @@ import QuestionnaireForm from '../components/questionnaire/QuestionnaireForm';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 import StripePayment from '../components/payment/StripePayment';
+import { API_URL } from '../config/constants';
 
 // Get publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || '';
@@ -67,7 +68,7 @@ const HealthQuestionnaire = () => {
   useEffect(() => {
     const fetchQuestionnaire = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/questionnaires/', {
+        const response = await axios.get(`${API_URL}/questionnaires/`, {
           withCredentials: true,
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -180,8 +181,8 @@ const HealthQuestionnaire = () => {
       // Otherwise this is a regular questionnaire submission (not from packages)
       // Determine if this is an update or a new submission
       const endpoint = hasExistingQuestionnaire 
-        ? 'http://localhost:5000/api/questionnaires/update'
-        : 'http://localhost:5000/api/questionnaires/create';
+        ? `${API_URL}/questionnaires/update`
+        : `${API_URL}/questionnaires/create`;
       
       const method = hasExistingQuestionnaire ? 'put' : 'post';
       
@@ -208,7 +209,7 @@ const HealthQuestionnaire = () => {
         if (hasExistingQuestionnaire) {
           try {
             await axios.post(
-              'http://localhost:5000/api/questionnaires/history',
+              `${API_URL}/questionnaires/history`,
               {},
               {
                 withCredentials: true,
@@ -224,7 +225,7 @@ const HealthQuestionnaire = () => {
         }
         
         // Check if user has an active package
-        const userResponse = await axios.get('http://localhost:5000/api/packages/user/active', {
+        const userResponse = await axios.get(`${API_URL}/packages/user/active`, {
           withCredentials: true,
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -264,7 +265,7 @@ const HealthQuestionnaire = () => {
     try {
       // Save questionnaire data first
       await axios.post(
-        'http://localhost:5000/api/questionnaires/create',
+        `${API_URL}/questionnaires/create`,
         {
           ...formData,
           packageId: packageId || null,
@@ -293,7 +294,7 @@ const HealthQuestionnaire = () => {
       // In our new flow, we first confirm the payment with our server
       // This will verify with Stripe that the payment succeeded before provisioning any resources
       const response = await axios.post(
-        'http://localhost:5000/api/stripe/confirm-payment',
+        `${API_URL}/stripe/confirm-payment`,
         {
           paymentIntentId: paymentId,
           packageId: packageId
@@ -321,17 +322,19 @@ const HealthQuestionnaire = () => {
         setPaymentSuccess(true);
         setPaymentMode(false);
         
-        // If the response includes a prescription, navigate to prescription
-        if (response.data.data.prescription && response.data.data.prescription.generated) {
-          setTimeout(() => {
-            navigate('/prescription', { state: { newPrescription: true } });
-          }, 1500);
-        } else {
-          // Otherwise, navigate to dashboard
-          setTimeout(() => {
-            navigate('/dashboard');
-          }, 1500);
-        }
+        // Always navigate to dashboard regardless of prescription status
+        setTimeout(() => {
+          navigate('/dashboard', { 
+            state: { 
+              success: 'Payment successful! Your package has been activated.',
+              newPurchase: true,
+              // Include information about prescription if it was generated
+              ...(response.data.data.prescription && response.data.data.prescription.generated && {
+                prescriptionGenerated: true
+              })
+            } 
+          });
+        }, 1500);
       } else {
         throw new Error(response.data.message || 'Failed to process package purchase');
       }
@@ -361,7 +364,7 @@ const HealthQuestionnaire = () => {
       
       // Make an API call to update the questionnaire but specify to keep all existing data
       const response = await axios.put(
-        'http://localhost:5000/api/questionnaires/update?keepExisting=true',
+        `${API_URL}/questionnaires/update?keepExisting=true`,
         {},
         {
           withCredentials: true,

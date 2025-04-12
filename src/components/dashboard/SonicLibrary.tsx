@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Music, ChevronDown, ChevronUp } from 'lucide-react';
 import AudioCard from '../audio/AudioCard';
+import { API_URL } from '../../config/constants';
 
 interface AudioFile {
   _id: string;
@@ -35,7 +36,7 @@ const SonicLibrary: React.FC<SonicLibraryProps> = ({ isPremium }) => {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/api/audio/premium-library', {
+      const response = await fetch(`${API_URL}/audio/premium-library`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

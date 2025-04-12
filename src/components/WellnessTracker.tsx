@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Droplet, Moon, Sun, Clock, AlertCircle, Info, BarChart4, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Activity, Droplet, Moon, Sun, Clock, AlertCircle, Info, BarChart4, ChevronLeft, ChevronRight, Package } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -15,6 +15,8 @@ import {
   Legend,
   ChartOptions
 } from 'chart.js';
+import { API_URL } from '../config/constants';
+import { useNavigate } from 'react-router-dom';
 
 // Register ChartJS components
 ChartJS.register(
@@ -59,11 +61,14 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ showReminderOnly = fa
   const [analyticsLoading, setAnalyticsLoading] = useState<boolean>(false);
   
   const { user } = useAuth();
+  const navigate = useNavigate();
   
   useEffect(() => {
-    fetchWellnessHistory();
-    checkLastEntryTime();
-  }, []);
+    if (user && user.packageType !== 'none') {
+      fetchWellnessHistory();
+      checkLastEntryTime();
+    }
+  }, [user]);
   
   useEffect(() => {
     if (showAnalytics) {
@@ -76,7 +81,13 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ showReminderOnly = fa
       const token = localStorage.getItem('token');
       if (!token) return;
       
-      const response = await axios.get('http://localhost:5000/api/wellness/history', {
+      // Check if user has an active package
+      if (!user || user.packageType === 'none') {
+        setErrorMessage('You need an active package to use the Wellness Tracker');
+        return;
+      }
+      
+      const response = await axios.get(`${API_URL}/wellness/history`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -123,7 +134,7 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ showReminderOnly = fa
       if (!token) return;
       
       // First, check if reminder should be shown from API
-      const reminderResponse = await axios.get('http://localhost:5000/api/wellness/check-last-entry', {
+      const reminderResponse = await axios.get(`${API_URL}/wellness/check-last-entry`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -180,7 +191,7 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ showReminderOnly = fa
         return;
       }
       
-      const response = await axios.post('http://localhost:5000/api/wellness/submit', {
+      const response = await axios.post(`${API_URL}/wellness/submit`, {
         sleep,
         water,
         energy,
@@ -631,9 +642,38 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ showReminderOnly = fa
     </div>
   );
   
+  // Function to navigate to packages page
+  const handleGoToPackages = () => {
+    navigate('/packages');
+  };
+  
+  // Function to render a message for users without an active package
+  const renderNoPackageMessage = () => {
+    return (
+      <div className="bg-navy-800 rounded-lg p-6 border border-navy-700 text-center">
+        <div className="flex flex-col items-center mb-6">
+          <Package className="w-16 h-16 text-gold-500/60 mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">Package Required</h3>
+          <p className="text-navy-300 max-w-md mx-auto mb-4">
+            Access to the Wellness Tracker is exclusive to users with an active healing package. 
+            Track your wellbeing metrics and view personalized analytics by upgrading today.
+          </p>
+          <button
+            onClick={handleGoToPackages}
+            className="px-4 py-2 bg-gold-500 text-navy-900 rounded-md font-medium hover:bg-gold-400 transition-colors"
+          >
+            View Available Packages
+          </button>
+        </div>
+      </div>
+    );
+  };
+  
   return (
     <div className="animate-fadeIn">
-      {showReminder ? (
+      {(!user || user.packageType === 'none') ? (
+        renderNoPackageMessage()
+      ) : showReminder ? (
         renderReminder()
       ) : (
         <div className="relative">

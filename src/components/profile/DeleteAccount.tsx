@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card, CardHeader } from '../ui/Card';
 import { Button, Input } from '../ui/FormElements';
 import { ErrorMessage, SuccessMessage, WarningMessage } from '../ui/Messages';
+import { API_URL } from '../../config/constants';
 
 interface DeleteAccountProps {
   hasActivePackage: boolean;
@@ -76,7 +77,7 @@ export default function DeleteAccount({ hasActivePackage }: DeleteAccountProps) 
     try {
       const token = localStorage.getItem('token');
       await axios.post(
-        'http://localhost:5000/api/auth/delete-account',
+        `${API_URL}/auth/delete-account`,
         { deletionCode },
         { headers: { Authorization: `Bearer ${token}` } }
       );

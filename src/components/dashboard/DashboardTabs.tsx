@@ -1,7 +1,7 @@
 import React from 'react';
-import { Activity, Settings, MessageSquare, Music } from 'lucide-react';
+import { Activity, MessageSquare, Music } from 'lucide-react';
 
-type TabType = 'prescriptions' | 'wellness' | 'settings' | 'messages' | 'sonic-library';
+type TabType = 'prescriptions' | 'wellness' | 'messages' | 'sonic-library';
 
 interface DashboardTabsProps {
   activeTab: TabType;
@@ -33,11 +33,6 @@ const DashboardTabs: React.FC<DashboardTabsProps> = ({
       label: 'Messages',
       icon: <MessageSquare className="w-5 h-5" />,
       notification: hasUnreadMessages
-    },
-    {
-      id: 'settings' as TabType,
-      label: 'Settings',
-      icon: <Settings className="w-5 h-5" />
     }
   ];
   

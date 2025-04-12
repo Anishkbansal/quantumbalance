@@ -7,6 +7,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { toast } from 'react-hot-toast';
 import { CreditCard, Plus, X, Trash2, ArrowLeft, AlertCircle, Edit, Save, CheckCircle, MapPin, Mail, Phone, User } from 'lucide-react';
+import { API_URL } from '../../config/constants';
 
 // UI components
 import { Button } from '../../components/ui/FormElements';
@@ -132,7 +133,7 @@ const PaymentMethodsPage = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        'http://localhost:5000/api/stripe/payment-methods',
+        `${API_URL}/stripe/payment-methods`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -158,7 +159,7 @@ const PaymentMethodsPage = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        'http://localhost:5000/api/stripe/billing-details',
+        `${API_URL}/stripe/billing-details`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -180,7 +181,7 @@ const PaymentMethodsPage = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        'http://localhost:5000/api/stripe/default-payment-method',
+        `${API_URL}/stripe/default-payment-method`,
         { paymentMethodId },
         {
           headers: {
@@ -220,7 +221,7 @@ const PaymentMethodsPage = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.delete(
-        `http://localhost:5000/api/stripe/payment-methods/${paymentMethodId}`,
+        `${API_URL}/stripe/payment-methods/${paymentMethodId}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -273,7 +274,7 @@ const PaymentMethodsPage = () => {
       setSavingBilling(true);
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        'http://localhost:5000/api/stripe/billing-details',
+        `${API_URL}/stripe/billing-details`,
         billingDetails,
         {
           headers: {
@@ -816,7 +817,7 @@ const AddCardForm = ({
       
       // Save the payment method to the backend
       const response = await axios.post(
-        'http://localhost:5000/api/stripe/payment-methods',
+        `${API_URL}/stripe/payment-methods`,
         { paymentMethodId: paymentMethod.id },
         {
           headers: {

@@ -1,8 +1,9 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import axios from 'axios';
+import { API_URL } from '../config/constants';
 
-// API URL
-const API_URL = 'http://localhost:5000/api';
+// API URL - use the constant instead of hardcoded value
+// const API_URL = '${API_URL}';
 
 // User interface
 interface User {
@@ -58,11 +59,15 @@ interface AuthContextType {
   logout: () => Promise<void>;
   verifyEmail: (email: string, code: string) => Promise<void>;
   resendVerificationCode: (email: string) => Promise<void>;
+  verifyAdminLogin: (email: string, otp: string) => Promise<void>;
+  resendAdminVerificationCode: (email: string) => Promise<void>;
   updateUser: (userData: Partial<User>) => void;
   refreshUserData: () => Promise<void>;
   isVerified: boolean;
   requiresVerification: boolean;
+  requiresAdminVerification: boolean;
   pendingVerificationEmail: string | null;
+  pendingAdminEmail: string | null;
 }
 
 // Create context
@@ -80,6 +85,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
   const [requiresVerification, setRequiresVerification] = useState<boolean>(false);
+  const [requiresAdminVerification, setRequiresAdminVerification] = useState<boolean>(false);
+  const [pendingAdminEmail, setPendingAdminEmail] = useState<string | null>(null);
 
   // Configure axios to send credentials with requests
   axios.defaults.withCredentials = true;
@@ -241,7 +248,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (response.data.success) {
         setUser(response.data.user);
         setRequiresVerification(false);
+        setRequiresAdminVerification(false);
         setPendingVerificationEmail(null);
+        setPendingAdminEmail(null);
         
         // Store token in localStorage if it's returned from the API
         if (response.data.token) {
@@ -255,6 +264,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (err.response?.status === 403 && err.response?.data?.requiresVerification) {
         setRequiresVerification(true);
         setPendingVerificationEmail(err.response.data.email);
+      }
+      // Check if the error is related to admin verification
+      else if (err.response?.status === 403 && err.response?.data?.requiresAdminVerification) {
+        setRequiresAdminVerification(true);
+        setPendingAdminEmail(err.response.data.email);
       }
       
       setError(err.response?.data?.message || 'Login failed');
@@ -341,6 +355,63 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Admin verification function
+  const verifyAdminLogin = async (email: string, otp: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await axios.post(`${API_URL}/auth/admin/verify-otp`, {
+        email,
+        otp
+      });
+
+      if (response.data.success) {
+        // Update user data with verified status
+        setUser(response.data.user);
+        setRequiresAdminVerification(false);
+        setPendingAdminEmail(null);
+        
+        // Store token in localStorage if it's returned from the API
+        if (response.data.token) {
+          localStorage.setItem('token', response.data.token);
+          // Set default Authorization header for future requests
+          axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
+        }
+      }
+      
+      return response.data;
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Admin verification failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Resend admin verification code
+  const resendAdminVerificationCode = async (email: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await axios.post(`${API_URL}/auth/admin/generate-otp`, {
+        email
+      });
+
+      if (response.data.success) {
+        console.log('Admin verification code sent');
+      }
+      
+      return response.data;
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to send admin verification code');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Update user data
   const updateUser = (userData: Partial<User>) => {
     if (user) {
@@ -361,11 +432,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     verifyEmail,
     resendVerificationCode,
+    verifyAdminLogin,
+    resendAdminVerificationCode,
     updateUser,
     refreshUserData,
     isVerified,
     requiresVerification,
-    pendingVerificationEmail
+    requiresAdminVerification,
+    pendingVerificationEmail,
+    pendingAdminEmail
   };
 
   return (

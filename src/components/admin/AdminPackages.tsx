@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { AlertCircle, Loader2, Check, Plus, Trash } from 'lucide-react';
+import { API_URL } from '../../config/constants';
+import { useCurrency } from '../../contexts/CurrencyContext';
+import { formatCurrency as formatCurrencyUtil } from '../../utils/formatters';
 
 interface Package {
   _id: string;
@@ -20,6 +23,7 @@ const AdminPackages = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [seedingPackages, setSeedingPackages] = useState(false);
+  const { currency } = useCurrency();
   
   useEffect(() => {
     fetchPackages();
@@ -28,7 +32,7 @@ const AdminPackages = () => {
   const fetchPackages = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('http://localhost:5000/api/packages/all', {
+      const response = await axios.get(`${API_URL}/packages/all`, {
         withCredentials: true,
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -116,7 +120,7 @@ const AdminPackages = () => {
       // Create each package
       for (const pkg of defaultPackages) {
         await axios.post(
-          'http://localhost:5000/api/packages/create',
+          `${API_URL}/packages/create`,
           pkg,
           {
             withCredentials: true,
@@ -138,10 +142,7 @@ const AdminPackages = () => {
   };
   
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(amount);
+    return formatCurrencyUtil(amount, currency.code);
   };
   
   return (

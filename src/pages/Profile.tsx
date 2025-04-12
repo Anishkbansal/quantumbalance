@@ -11,9 +11,7 @@ import UserInfoForm from '../components/profile/UserInfoForm';
 import { convertFileToBase64 } from '../utils/formatters';
 import { useNavigate } from 'react-router-dom';
 import { CreditCard } from 'lucide-react';
-
-// API URL - make sure this matches server config
-const API_URL = 'http://localhost:5000/api';
+import { API_URL } from '../config/constants';
 
 const Profile: React.FC = () => {
   const { user: authUser, updateUser } = useAuth();

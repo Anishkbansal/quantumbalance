@@ -11,6 +11,7 @@ import UserMessaging from '../components/messaging/UserMessaging';
 import UnreadIndicator from '../components/messaging/UnreadIndicator';
 import SonicLibrary from '../components/dashboard/SonicLibrary';
 import DashboardTabs from '../components/dashboard/DashboardTabs';
+import { API_URL } from '../config/constants';
 
 // Define the User interface
 interface User {
@@ -130,7 +131,7 @@ const MOCK_PRESCRIPTIONS: Prescription[] = [
 ];
 
 const Dashboard = () => {
-  const [activeTab, setActiveTab] = useState<'prescriptions' | 'wellness' | 'settings' | 'messages' | 'sonic-library'>('prescriptions');
+  const [activeTab, setActiveTab] = useState<'prescriptions' | 'wellness' | 'messages' | 'sonic-library'>('prescriptions');
   const [error] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
@@ -165,7 +166,7 @@ const Dashboard = () => {
       
       setLoading(true);
       const response = await fetch(
-        'http://localhost:5000/api/packages/user/active',
+        `${API_URL}/packages/user/active`,
         {
           method: 'GET',
           headers: {
@@ -212,7 +213,7 @@ const Dashboard = () => {
       
       setLoading(true);
       const response = await fetch(
-        'http://localhost:5000/api/prescription/active',
+        `${API_URL}/prescription/active`,
         {
           method: 'GET',
           headers: {
@@ -274,7 +275,7 @@ const Dashboard = () => {
       if (!token) return;
       
       const response = await fetch(
-        'http://localhost:5000/api/audio/default',
+        `${API_URL}/audio/default`,
         {
           method: 'GET',
           headers: {
@@ -734,7 +735,7 @@ const Dashboard = () => {
       }
       
       const response = await fetch(
-        'http://localhost:5000/api/prescription/generate',
+        `${API_URL}/prescription/generate`,
         {
           method: 'POST',
           headers: {
@@ -789,7 +790,7 @@ const Dashboard = () => {
       if (!token) return;
       
       const response = await axios.get(
-        'http://localhost:5000/api/wellness/check-last-entry',
+        `${API_URL}/wellness/check-last-entry`,
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -1205,39 +1206,6 @@ const Dashboard = () => {
     return <UserMessaging />;
   };
   
-  // Add this to render the settings content
-  const renderSettingsSection = () => {
-    return (
-      <div>
-        <h2 className="text-2xl font-bold text-gold-500 mb-4">Account Settings</h2>
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <label className="text-navy-300 text-sm">Email Notifications</label>
-            <div className="flex items-center gap-3">
-              <input type="checkbox" className="form-checkbox h-5 w-5 text-gold-500 rounded" />
-              <span className="text-white">Receive email notifications</span>
-            </div>
-          </div>
-          
-          <div className="grid gap-2">
-            <label className="text-navy-300 text-sm">Audio Quality</label>
-            <select className="py-2 px-3 bg-navy-750 border border-navy-600 rounded-lg text-white">
-              <option value="high">High (320kbps)</option>
-              <option value="medium">Medium (192kbps)</option>
-              <option value="low">Low (128kbps)</option>
-            </select>
-          </div>
-          
-          <div className="mt-4">
-            <button className="py-2 px-4 bg-gold-500 text-navy-900 rounded-lg font-medium hover:bg-gold-400 transition-colors">
-              Save Settings
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-  
   // Update the main render section to use the DashboardTabs component
   return (
     <div className="min-h-screen bg-navy-900 py-8">
@@ -1375,8 +1343,6 @@ const Dashboard = () => {
           {activeTab === 'sonic-library' && <SonicLibrary isPremium={user?.packageType === 'premium'} />}
           
           {activeTab === 'messages' && renderMessagesSection()}
-          
-          {activeTab === 'settings' && renderSettingsSection()}
         </div>
         
         {/* Wellness Reminder Modal */}

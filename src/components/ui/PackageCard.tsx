@@ -1,5 +1,7 @@
 import React from 'react';
 import { Check, RefreshCw } from 'lucide-react';
+import { useCurrency } from '../../contexts/CurrencyContext';
+import { formatCurrency } from '../../utils/formatters';
 
 export interface PackageInfo {
   id: string;
@@ -20,6 +22,8 @@ interface PackageCardProps {
   userHasActivePackage?: boolean;
   isPackageRenewable?: boolean;
   onRenew?: () => void;
+  isLoading?: boolean;
+  isRenewalLoading?: boolean;
 }
 
 const PackageCard: React.FC<PackageCardProps> = ({
@@ -29,9 +33,15 @@ const PackageCard: React.FC<PackageCardProps> = ({
   isUserActivePackage = false,
   userHasActivePackage = false,
   isPackageRenewable = false,
-  onRenew
+  onRenew,
+  isLoading = false,
+  isRenewalLoading = false,
 }) => {
   const { id, name, description, price, period, features, highlight, badge } = packageInfo;
+  const { currency } = useCurrency();
+  
+  // Format the price using the user's preferred currency
+  const formattedPrice = formatCurrency(price, currency.code);
   
   // If this is the user's current package, automatically set it as highlighted
   const isHighlighted = highlight || isUserActivePackage;
@@ -77,7 +87,7 @@ const PackageCard: React.FC<PackageCardProps> = ({
       <div className="p-6 flex-1">
         <h3 className="text-xl font-bold text-white mb-2">{name}</h3>
         <div className="mb-4">
-          <span className="text-3xl font-bold text-white">${price}</span>
+          <span className="text-3xl font-bold text-white">{formattedPrice}</span>
           {period && <span className="text-gray-400 ml-1">/{period}</span>}
         </div>
         <p className="text-gray-300 mb-4">{description}</p>

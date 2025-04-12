@@ -2,11 +2,17 @@ import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Lock, Mail, AlertCircle, CheckSquare, Square, ShieldCheck, Copy } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import AdminVerification from '../../components/auth/AdminVerification';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loading: authLoading, error: authError } = useAuth();
+  const { 
+    login, 
+    loading: authLoading, 
+    error: authError, 
+    requiresAdminVerification
+  } = useAuth();
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +25,11 @@ const Login: React.FC = () => {
   
   // Get the redirect path from location state or default to dashboard
   const from = location.state?.from?.pathname || '/dashboard';
+  
+  // If admin verification is required, show the verification screen
+  if (requiresAdminVerification) {
+    return <AdminVerification />;
+  }
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +78,9 @@ const Login: React.FC = () => {
             email: err.response.data.email 
           }
         });
+      } else if (err.response?.status === 403 && err.response?.data?.requiresAdminVerification) {
+        // Admin verification is handled by the useAuth context and the if condition above
+        // No need to do anything here as the component will re-render
       } else {
         setError(err.response?.data?.message || 'Login failed');
       }

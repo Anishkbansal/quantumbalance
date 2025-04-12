@@ -43,7 +43,7 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: ['http://localhost:3000', 'https://quantumbalance.co.uk'],
   credentials: true
 }));
 
@@ -73,6 +73,7 @@ app.use(session({
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/questionnaires', questionnaireRoutes);
 app.use('/api/prescription', prescriptionRoutes);
@@ -83,6 +84,28 @@ app.use('/api/audio-files', audioFilesRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/scalar', scalarRoutes);
+
+// Add a test endpoint directly in server.js
+app.get('/api-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'API test endpoint worked!',
+    path: req.path,
+    originalUrl: req.originalUrl,
+    baseUrl: req.baseUrl
+  });
+});
+
+// Add another test endpoint with the full path
+app.get('/api/api-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'API test endpoint with /api prefix worked!',
+    path: req.path,
+    originalUrl: req.originalUrl,
+    baseUrl: req.baseUrl
+  });
+});
 
 // Serve static files from the public directory
 app.use(express.static('public'));

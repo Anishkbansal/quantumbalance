@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { Loader2, CreditCard, AlertCircle, CheckCircle, ArrowRight } from 'lucide-react';
+import { Loader2, CreditCard, AlertCircle, CheckCircle, ArrowRight, X } from 'lucide-react';
 import axios from 'axios';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { Button } from "../ui/FormElements";
 import { Card } from "../ui/Card";
+import { API_URL } from '../../config/constants';
+import { useCurrency } from '../../contexts/CurrencyContext';
+import { formatCurrency } from '../../utils/formatters';
 
 // Country data with postal code labels
 interface CountryData {
@@ -76,11 +79,13 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   const stripe = useStripe();
   const elements = useElements();
   const navigate = useNavigate();
+  const { currency } = useCurrency();
   
   const [loading, setLoading] = useState(false);
   const [clientSecret, setClientSecret] = useState<string>('');
   const [paymentIntentId, setPaymentIntentId] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
@@ -128,10 +133,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   };
   
   // Format price as currency
-  const formattedPrice = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  }).format(packagePrice);
+  const formattedPrice = formatCurrency(packagePrice, currency.code);
   
   // Fetch user's saved payment methods on component mount
   useEffect(() => {
@@ -140,7 +142,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         setLoadingPaymentMethods(true);
         const token = localStorage.getItem('token');
         const response = await axios.get(
-          'http://localhost:5000/api/stripe/payment-methods',
+          `${API_URL}/stripe/payment-methods`,
           {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -184,7 +186,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        'http://localhost:5000/api/stripe/billing-details',
+        `${API_URL}/stripe/billing-details`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -213,7 +215,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
       
       const token = localStorage.getItem('token');
       const response = await axios.post(
-        'http://localhost:5000/api/stripe/create-payment-intent',
+        `${API_URL}/stripe/create-payment-intent`,
         { 
           packageId,
           countryCode: billingDetails.address.country,
@@ -267,17 +269,35 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   };
   
   // Handle payment submission
-  const handlePayment = async (e: React.FormEvent) => {
+  const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!stripe || !clientSecret) {
       return;
     }
     
+    if (!selectedPaymentMethodId) {
+      setError('Please select a payment method');
+      return;
+    }
+    
+    // Show confirmation dialog
+    setShowConfirmDialog(true);
+  };
+  
+  // Process payment after confirmation
+  const processPayment = async () => {
     try {
+      setShowConfirmDialog(false);
       setLoading(true);
       setError(null);
       
+      // Check if stripe is available
+      if (!stripe || !clientSecret) {
+        throw new Error('Stripe is not initialized');
+      }
+      
+      // Check if payment method is selected
       if (!selectedPaymentMethodId) {
         throw new Error('Please select a payment method');
       }
@@ -357,7 +377,82 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   };
   
   return (
-    <div className="bg-navy-800/95 backdrop-filter backdrop-blur-sm rounded-lg p-6 w-full max-w-md mx-auto max-h-[90vh] overflow-y-auto shadow-xl border border-navy-700/50">
+    <div className="bg-navy-800/95 backdrop-filter backdrop-blur-sm rounded-lg p-6 w-full max-w-md mx-auto max-h-[90vh] overflow-y-auto shadow-xl border border-navy-700/50 relative">
+      {/* Full screen loading overlay */}
+      {loading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-navy-900/80 backdrop-blur-sm z-50 rounded-lg">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-gold-500 mb-4"></div>
+          <p className="text-white text-lg font-medium">Processing payment...</p>
+          <p className="text-navy-300 text-sm mt-2">Please do not close this window</p>
+        </div>
+      )}
+      
+      {/* Confirmation Dialog */}
+      <AnimatePresence>
+        {showConfirmDialog && (
+          <motion.div 
+            className="fixed inset-0 flex items-center justify-center z-50 px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="absolute inset-0 bg-black/70" onClick={() => setShowConfirmDialog(false)}></div>
+            <motion.div 
+              className="bg-navy-800 border border-navy-600 rounded-lg p-6 w-full max-w-md relative z-10 shadow-2xl"
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+            >
+              <button 
+                className="absolute top-3 right-3 text-navy-400 hover:text-white"
+                onClick={() => setShowConfirmDialog(false)}
+              >
+                <X size={18} />
+              </button>
+              
+              <h3 className="text-xl font-bold text-white mb-3">Confirm Payment</h3>
+              
+              <div className="bg-navy-700/50 p-4 rounded-lg mb-4">
+                <div className="flex justify-between mb-2">
+                  <span className="text-navy-300">Package:</span>
+                  <span className="text-white font-medium">{packageName}</span>
+                </div>
+                <div className="flex justify-between mb-2">
+                  <span className="text-navy-300">Amount:</span>
+                  <span className="text-gold-400 font-bold">{formattedPrice}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-navy-300">Payment Method:</span>
+                  <span className="text-white">
+                    {paymentMethods.find(m => m.id === selectedPaymentMethodId)?.brand} •••• 
+                    {paymentMethods.find(m => m.id === selectedPaymentMethodId)?.last4}
+                  </span>
+                </div>
+              </div>
+              
+              <p className="text-navy-300 mb-5">
+                Are you sure you want to complete this purchase? Your card will be charged {formattedPrice}.
+              </p>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowConfirmDialog(false)}
+                  className="flex-1 py-2 px-4 bg-navy-700 hover:bg-navy-600 text-white rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={processPayment}
+                  className="flex-1 py-2 px-4 bg-gold-500 hover:bg-gold-400 text-navy-900 font-medium rounded-md transition-colors"
+                >
+                  Confirm Payment
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
       <motion.div 
         className="mb-6 text-center"
         initial={{ opacity: 0, y: -20 }}
@@ -384,7 +479,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         </motion.div>
       )}
       
-      <form onSubmit={handlePayment} className="space-y-5">
+      <form onSubmit={handlePaymentSubmit} className="space-y-5">
         {/* Payment Methods Section */}
         <motion.div
           initial="hidden"
@@ -473,20 +568,11 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         >
           <button
             type="submit"
-            disabled={loading || !stripe || !clientSecret || !selectedPaymentMethodId || paymentMethods.length === 0}
+            disabled={!stripe || !clientSecret || !selectedPaymentMethodId || paymentMethods.length === 0}
             className="px-6 py-2.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 rounded-md text-navy-900 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <CreditCard className="w-4 h-4 mr-2" />
-                Pay Now
-              </>
-            )}
+            <CreditCard className="w-4 h-4 mr-2" />
+            Pay Now
           </button>
         </motion.div>
       </form>

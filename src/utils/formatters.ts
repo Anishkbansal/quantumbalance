@@ -164,4 +164,58 @@ export function getFeaturesByType(type: string): string[] {
     default: 
       return ['Basic features'];
   }
+}
+
+/**
+ * Format a number as a currency string
+ * @param amount - The amount to format
+ * @param currencyCode - The ISO 4217 currency code (default: USD)
+ * @param locale - The locale to use for formatting (default: en-US)
+ * @returns Formatted currency string
+ */
+export function formatCurrency(
+  amount: number,
+  currencyCode: string = 'USD',
+  locale: string = 'en-US'
+): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: currencyCode,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+/**
+ * Get default currency based on user's browser locale
+ * @returns The currency code (default: USD)
+ */
+export function getDefaultCurrency(): string {
+  // This is a simple mapping of common locales to currencies
+  const localeCurrencyMap: Record<string, string> = {
+    'en-US': 'USD',
+    'en-GB': 'GBP',
+    'en-CA': 'CAD',
+    'en-AU': 'AUD',
+    'en-NZ': 'NZD',
+    'de': 'EUR',
+    'de-DE': 'EUR',
+    'de-AT': 'EUR',
+    'fr': 'EUR',
+    'fr-FR': 'EUR',
+    'es': 'EUR',
+    'es-ES': 'EUR',
+    'it': 'EUR',
+    'it-IT': 'EUR',
+    'ja': 'JPY',
+    'ja-JP': 'JPY',
+    'zh': 'CNY',
+    'zh-CN': 'CNY'
+  };
+  
+  // Try to get the user's locale from the browser
+  const userLocale = navigator.language || 'en-US';
+  
+  // Return the appropriate currency code or USD as fallback
+  return localeCurrencyMap[userLocale] || 'USD';
 } 

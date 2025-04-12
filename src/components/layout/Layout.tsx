@@ -4,6 +4,7 @@ import { LayoutDashboard, Users, FileText, CreditCard, Stethoscope, LogOut, Audi
 import VerifyEmailButton from './VerifyEmailButton';
 import Footer from './Footer';
 import { useAuth } from '../../contexts/AuthContext';
+import CurrencySelector from '../ui/CurrencySelector';
 
 // Define interfaces for navigation and SidebarContent
 interface NavigationItem {
@@ -147,29 +148,32 @@ const Layout = () => {
             </div>
           </div>
           
-          {isAuthenticated ? (
-            <button 
-              onClick={() => navigate(isAdmin ? '/admin' : '/dashboard')}
-              className="flex items-center space-x-2 p-1"
-            >
-              <div className="w-8 h-8 rounded-full overflow-hidden bg-navy-700 border border-gold-500">
-                <div className="w-full h-full flex items-center justify-center bg-navy-600 text-gold-500">
-                  <User className="w-4 h-4" />
+          <div className="flex items-center space-x-2">
+            <CurrencySelector minimal={true} />
+            {isAuthenticated ? (
+              <button 
+                onClick={() => navigate(isAdmin ? '/admin' : '/dashboard')}
+                className="flex items-center space-x-2 p-1"
+              >
+                <div className="w-8 h-8 rounded-full overflow-hidden bg-navy-700 border border-gold-500">
+                  <div className="w-full h-full flex items-center justify-center bg-navy-600 text-gold-500">
+                    <User className="w-4 h-4" />
+                  </div>
                 </div>
-              </div>
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                navigate('/login');
-                setIsMobileMenuOpen(false);
-              }}
-              className="flex items-center gap-1 px-3 py-1.5 bg-gold-500 text-navy-900 rounded-lg text-sm font-medium hover:bg-gold-400"
-            >
-              <LogIn className="w-4 h-4" />
-              <span>Login</span>
-            </button>
-          )}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  navigate('/login');
+                  setIsMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 bg-gold-500 text-navy-900 rounded-lg text-sm font-medium hover:bg-gold-400"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Login</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -318,8 +322,16 @@ function SidebarContent({ navigation, location, signOut, isAuthenticated, isAdmi
         </nav>
       </div>
 
-      {/* Auth section - right after navigation */}
+      {/* Currency selector */}
       <div className="mt-4 border-t border-navy-700 pt-4">
+        <div className="px-4 py-2 flex items-center justify-between">
+          <span className="text-navy-300 text-sm">Currency</span>
+          <CurrencySelector />
+        </div>
+      </div>
+
+      {/* Auth section - right after navigation */}
+      <div className="mt-2 border-t border-navy-700 pt-4">
         {!isAdmin && isAuthenticated && <VerifyEmailButton />}
 
         {isAuthenticated ? (

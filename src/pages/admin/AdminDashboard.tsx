@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, FileText, CreditCard, Stethoscope, Package, Activity, AlertCircle, MessageSquare } from 'lucide-react';
+import { Users, UserPlus, FileText, CreditCard, Stethoscope, Package, Activity, AlertCircle, MessageSquare, Music } from 'lucide-react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
@@ -192,6 +192,13 @@ const AdminDashboard: React.FC = () => {
               >
                 <MessageSquare className="w-5 h-5 text-gold-500 mr-2" />
                 <span className="text-white">User Messages</span>
+              </button>
+              <button 
+                onClick={() => navigate('/admin/sonic-library')}
+                className="p-4 bg-navy-750 rounded-lg hover:bg-navy-700 transition flex items-center"
+              >
+                <Music className="w-5 h-5 text-gold-500 mr-2" />
+                <span className="text-white">Sonic Library</span>
               </button>
             </div>
           </div>

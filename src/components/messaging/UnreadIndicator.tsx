@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../contexts/AuthContext';
 import { MessageSquare } from 'lucide-react';
+import { API_URL } from '../../config/constants';
 
 interface UnreadIndicatorProps {
   className?: string;
@@ -22,7 +23,7 @@ const UnreadIndicator: React.FC<UnreadIndicatorProps> = ({ className = '' }) => 
       const token = localStorage.getItem('token');
       
       const response = await axios.get(
-        'http://localhost:5000/api/messages/unread/count',
+        `${API_URL}/messages/unread/count`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       

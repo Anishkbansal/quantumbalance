@@ -337,6 +337,96 @@ export const sendPaymentNotificationToAdmin = async (user, packageData, paymentI
   return sgMail.send(msg);
 };
 
+/**
+ * Send admin login verification email
+ * @param {string} adminEmail - Admin's email address
+ * @param {string} name - Admin's name
+ * @param {string} verificationCode - The code to be sent
+ * @returns {Promise} - SendGrid API response
+ */
+export const sendAdminLoginVerification = async (adminEmail, name, verificationCode) => {
+  const msg = {
+    to: adminEmail,
+    from: VERIFIED_SENDER,
+    subject: 'Admin Login Verification - Quantum Balance',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #2c3e50;">Quantum Balance</h2>
+          <p style="color: #e74c3c; font-weight: bold;">ADMIN SECURITY VERIFICATION</p>
+        </div>
+        <div style="margin-bottom: 30px;">
+          <h3 style="color: #2c3e50;">Hello ${name},</h3>
+          <p>Someone is attempting to log in to your admin account. For security reasons, please verify this login attempt using the code below:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0;">
+            <h2 style="margin: 0; color: #2c3e50; letter-spacing: 5px;">${verificationCode}</h2>
+          </div>
+          <p>This code will expire in 10 minutes for security reasons.</p>
+          <p><strong>If this wasn't you</strong>, please contact other administrators immediately as your account may be compromised.</p>
+        </div>
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 20px; font-size: 12px; color: #7f8c8d;">
+          <p>This is an automated security message, please do not reply to this email.</p>
+          <p>&copy; ${new Date().getFullYear()} Quantum Balance. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  };
+
+  return sgMail.send(msg);
+};
+
+/**
+ * Notify all admins about an admin login with option to force logout all admins
+ * @param {Object} adminUser - The admin who logged in
+ * @param {string} logoutToken - Special token that can be used to force logout all admins
+ * @returns {Promise<Array>} - Array of promises from SendGrid API
+ */
+export const notifyAdminLogin = async (adminUser, logoutToken) => {
+  const adminEmails = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',') : [];
+  
+  if (!adminEmails.length) {
+    console.warn('No admin emails configured in .env');
+    return [];
+  }
+  
+  const logoutUrl = `${process.env.SITE_URL || 'https://quantumbalance.co.uk'}/api/auth/admin/logout-all/${logoutToken}`;
+  
+  const msg = {
+    to: adminEmails[0], // Send to first admin as primary recipient
+    cc: adminEmails.slice(1), // CC other admins if any
+    from: VERIFIED_SENDER,
+    subject: 'SECURITY ALERT: Admin Login Detected - Quantum Balance',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #2c3e50;">Quantum Balance Security Alert</h2>
+        </div>
+        <div style="margin-bottom: 30px;">
+          <h3 style="color: #e74c3c;">Admin Login Detected</h3>
+          <p>An administrator has just logged into the Quantum Balance system.</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Admin Name:</strong> ${adminUser.name}</p>
+            <p><strong>Admin Email:</strong> ${adminUser.email}</p>
+            <p><strong>Login Time:</strong> ${new Date().toLocaleString()}</p>
+            <p><strong>IP Address:</strong> [IP address unavailable in dummy implementation]</p>
+          </div>
+          <p>If this login was not authorized, you can immediately log out all admin sessions by clicking the button below:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${logoutUrl}" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">FORCE LOGOUT ALL ADMINS</a>
+          </div>
+          <p style="color: #7f8c8d; font-size: 12px;">This link will expire in 24 hours for security reasons.</p>
+        </div>
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 20px; font-size: 12px; color: #7f8c8d;">
+          <p>This is an automated security message, please do not reply to this email.</p>
+          <p>&copy; ${new Date().getFullYear()} Quantum Balance. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  };
+
+  return sgMail.send(msg);
+};
+
 export default {
   createCustomEmailTemplate,
   sendEmail,
@@ -346,5 +436,7 @@ export default {
   sendScalarHealingRequest,
   sendScalarHealingConfirmation,
   sendPaymentConfirmation,
-  sendPaymentNotificationToAdmin
+  sendPaymentNotificationToAdmin,
+  sendAdminLoginVerification,
+  notifyAdminLogin
 }; 
