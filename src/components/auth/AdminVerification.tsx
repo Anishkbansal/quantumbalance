@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Alert, Shield, MailCheck, RefreshCw } from 'lucide-react';
+import { AlertCircle, Shield, MailCheck, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const AdminVerification: React.FC = () => {
@@ -82,7 +82,7 @@ const AdminVerification: React.FC = () => {
       
       {error && !resendSuccess && (
         <div className="w-full mb-4 p-3 bg-red-900/30 border border-red-800 rounded-md flex items-start">
-          <Alert className="w-5 h-5 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
+          <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
           <p className="text-sm text-red-300">{error}</p>
         </div>
       )}
@@ -96,7 +96,7 @@ const AdminVerification: React.FC = () => {
       
       {codeExpired && (
         <div className="w-full mb-4 p-3 bg-orange-900/30 border border-orange-800 rounded-md flex items-start">
-          <Alert className="w-5 h-5 text-orange-500 mt-0.5 mr-2 flex-shrink-0" />
+          <AlertCircle className="w-5 h-5 text-orange-500 mt-0.5 mr-2 flex-shrink-0" />
           <p className="text-sm text-orange-300">
             Your verification code has expired. Please request a new one.
           </p>

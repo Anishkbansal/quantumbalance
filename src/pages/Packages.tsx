@@ -283,6 +283,23 @@ export default function Packages() {
       return;
     }
     
+    // Check if user's email is verified
+    if (!user.isVerified) {
+      setError('You must verify your email address before purchasing a package');
+      // Show a more detailed error and provide a direct link to verification
+      setTimeout(() => {
+        if (window.confirm('Email verification required! Verify your email now to continue with your purchase?')) {
+          navigate('/verify-email', {
+            state: { 
+              from: '/packages',
+              message: 'Please verify your email to purchase a package'
+            }
+          });
+        }
+      }, 100);
+      return;
+    }
+    
     // Store the selected package
     setSelectedPackage(packageData);
     

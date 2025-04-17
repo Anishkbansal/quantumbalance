@@ -2,9 +2,9 @@ import React, { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-// Component to protect routes that require verification - BYPASSED FOR DEVELOPMENT
+// Component to protect routes that require verification
 const VerificationRequired: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, isVerified } = useAuth();
   const location = useLocation();
 
   // Show loading state while checking authentication
@@ -21,11 +21,6 @@ const VerificationRequired: React.FC = () => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // DEVELOPMENT MODE: Skip email verification check
-  console.log('Email verification bypassed for development in front-end.');
-  return <Outlet />;
-
-  /* Original code (commented out):
   // If user is not verified and not an admin, redirect to verify email page
   if (!isVerified && !user.isAdmin) {
     return <Navigate to="/verify-email" state={{ from: location }} replace />;
@@ -33,7 +28,6 @@ const VerificationRequired: React.FC = () => {
 
   // If user is authenticated and verified (or is admin), render protected content
   return <Outlet />;
-  */
 };
 
 export default VerificationRequired; 

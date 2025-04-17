@@ -417,10 +417,22 @@ export const getAdminConversations = async (adminId) => {
         msg => msg.sender.toString() === userId.toString() && !msg.readByRecipient
       ).length;
       
+      // Generate conversation key for decryption (if needed)
+      const secretKey = generateConversationKey(adminId, userId);
+      
+      let lastMessageContent = null;
+      if (lastMessage) {
+        // Decrypt the content for preview (limit to 50 chars)
+        const decryptedContent = Message.decryptMessage(lastMessage.content, lastMessage.iv, secretKey);
+        lastMessageContent = decryptedContent.length > 50 
+          ? decryptedContent.substring(0, 50) + '...' 
+          : decryptedContent;
+      }
+      
       return {
         user,
         lastMessage: lastMessage ? {
-          content: '...', // Don't decrypt for list view
+          content: lastMessageContent,
           createdAt: lastMessage.createdAt,
           sender: lastMessage.sender
         } : null,

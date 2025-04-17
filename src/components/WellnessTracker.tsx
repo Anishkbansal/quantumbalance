@@ -112,7 +112,7 @@ const WellnessTracker: React.FC<WellnessTrackerProps> = ({ showReminderOnly = fa
       const token = localStorage.getItem('token');
       if (!token) return;
       
-      const response = await axios.get(`http://localhost:5000/api/wellness/stats?range=${dateRange}`, {
+      const response = await axios.get(`${API_URL}/wellness/stats?range=${dateRange}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }

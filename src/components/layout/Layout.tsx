@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, CreditCard, Stethoscope, LogOut, AudioWaveform as Waveform, Info, FlaskRound as Flask, Package, Menu, X, LogIn, Zap, User, AlertCircle, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, CreditCard, Stethoscope, LogOut, AudioWaveform as Waveform, Info, FlaskRound as Flask, Package, Menu, X, LogIn, Zap, User, AlertCircle, MessageSquare, Music } from 'lucide-react';
 import VerifyEmailButton from './VerifyEmailButton';
 import Footer from './Footer';
 import { useAuth } from '../../contexts/AuthContext';
@@ -39,12 +39,10 @@ const Layout = () => {
   const navigation: NavigationItem[] = isAdmin ? [
     // Admin navigation items
     { name: 'Home', href: '/', icon: Waveform, publicOnly: true },
-    { name: 'User Management', href: '/admin', icon: Users },
+    { name: 'User Management', href: '/admin/users', icon: Users },
+    { name: 'Sonic Library', href: '/admin/sonic-library', icon: Music },
     { name: 'Create User', href: '/admin/create-user', icon: User },
     { name: 'Messages', href: '/admin/messages', icon: MessageSquare },
-    { name: 'Reports', href: '/admin/reports', icon: FileText },
-    { name: 'Payments', href: '/admin/payments', icon: CreditCard },
-    { name: 'Prescriptions', href: '/admin/prescriptions', icon: Stethoscope },
     { name: 'Profile', href: '/profile', icon: User },
   ] : [
     // Regular user navigation items
@@ -135,16 +133,17 @@ const Layout = () => {
             <button
               onClick={toggleMobileMenu}
               className="p-2 bg-navy-700 rounded-lg text-gold-500 hover:bg-navy-600"
+              aria-label="Toggle menu"
             >
               {isMobileMenuOpen ? (
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               ) : (
-                <Menu className="w-6 h-6" />
+                <Menu className="w-5 h-5" />
               )}
             </button>
             <div className="flex items-center gap-2">
-              <Waveform className="w-6 h-6 text-gold-500" />
-              <span className="ml-2 text-xl font-bold text-white">Quantum Balance</span>
+              <Waveform className="w-5 h-5 text-gold-500" />
+              <span className="text-lg font-bold text-white truncate max-w-[150px]">Quantum Balance</span>
             </div>
           </div>
           
@@ -152,12 +151,13 @@ const Layout = () => {
             <CurrencySelector minimal={true} />
             {isAuthenticated ? (
               <button 
-                onClick={() => navigate(isAdmin ? '/admin' : '/dashboard')}
-                className="flex items-center space-x-2 p-1"
+                onClick={() => navigate(isAdmin ? '/admin/users' : '/dashboard')}
+                className="flex items-center p-1"
+                aria-label="User profile"
               >
-                <div className="w-8 h-8 rounded-full overflow-hidden bg-navy-700 border border-gold-500">
+                <div className="w-7 h-7 rounded-full overflow-hidden bg-navy-700 border border-gold-500">
                   <div className="w-full h-full flex items-center justify-center bg-navy-600 text-gold-500">
-                    <User className="w-4 h-4" />
+                    <User className="w-3 h-3" />
                   </div>
                 </div>
               </button>
@@ -167,9 +167,9 @@ const Layout = () => {
                   navigate('/login');
                   setIsMobileMenuOpen(false);
                 }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-gold-500 text-navy-900 rounded-lg text-sm font-medium hover:bg-gold-400"
+                className="flex items-center gap-1 px-2 py-1.5 bg-gold-500 text-navy-900 rounded-lg text-xs font-medium hover:bg-gold-400"
               >
-                <LogIn className="w-4 h-4" />
+                <LogIn className="w-3 h-3" />
                 <span>Login</span>
               </button>
             )}
@@ -197,19 +197,19 @@ const Layout = () => {
         >
           <div className="bg-navy-800 w-64 min-h-screen p-4 pt-16 border-r border-navy-700 flex flex-col">
             {isAuthenticated && user && (
-              <div className="mb-6 p-4 border-b border-navy-700">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 rounded-full overflow-hidden bg-navy-700 border border-gold-500">
+              <div className="mb-6 p-3 border-b border-navy-700">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-full overflow-hidden bg-navy-700 border border-gold-500">
                     <div className="w-full h-full flex items-center justify-center bg-navy-600 text-gold-500">
-                      <User className="w-6 h-6" />
+                      <User className="w-5 h-5" />
                     </div>
                   </div>
                   <div>
-                    <p className="text-white font-medium">{user?.name}</p>
-                    <p className="text-navy-400 text-sm">{user?.email}</p>
+                    <p className="text-white font-medium text-sm truncate max-w-[130px]">{user?.name}</p>
+                    <p className="text-navy-400 text-xs truncate max-w-[130px]">{user?.email}</p>
                     {isAdmin && (
                       <span className="inline-block mt-1 px-2 py-0.5 bg-gold-500/20 text-gold-500 text-xs rounded-full">
-                        Administrator
+                        Admin
                       </span>
                     )}
                   </div>
@@ -218,26 +218,26 @@ const Layout = () => {
             )}
             
             {/* Scrollable navigation */}
-            <div className="overflow-y-auto pr-2 -mr-2">
-            <nav className="space-y-2">
+            <div className="overflow-y-auto flex-1 pr-2 -mr-2">
+              <nav className="space-y-1">
                 {filteredNavigation.map((item) => {
-                const isActive = location.pathname === item.href;
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                      isActive 
-                        ? 'bg-gold-500 text-navy-900' 
-                        : 'text-navy-300 hover:bg-navy-700 hover:text-gold-500'
-                    }`}
-                  >
-                    <item.icon className="w-5 h-5" />
-                    <span className="text-left">{item.name}</span>
-                  </Link>
-                );
-              })}
+                  const isActive = location.pathname === item.href;
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+                        isActive 
+                          ? 'bg-gold-500 text-navy-900' 
+                          : 'text-navy-300 hover:bg-navy-700 hover:text-gold-500'
+                      }`}
+                    >
+                      <item.icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-left text-sm truncate">{item.name}</span>
+                    </Link>
+                  );
+                })}
               </nav>
             </div>
               

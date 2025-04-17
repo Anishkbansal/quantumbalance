@@ -18,11 +18,18 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [audioProgress, setAudioProgress] = useState<number>(0);
   const [audioDuration, setAudioDuration] = useState<number>(0);
   const [isLooping, setIsLooping] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     // Create audio element
-    const audio = new Audio(audioUrl);
+    const audio = new Audio();
+    
+    // Set CORS attributes to prevent download and enable streaming
+    audio.crossOrigin = "anonymous";
+    audio.preload = "metadata";
+    
+    // Set the source after attaching event listeners
     audioRef.current = audio;
     
     // Set up event listeners
@@ -30,6 +37,9 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('error', handleError);
+    
+    // Set the audio source
+    audio.src = audioUrl;
     
     // Clean up on unmount
     return () => {
@@ -59,6 +69,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         })
         .catch(err => {
           console.error('Error playing audio:', err);
+          setError('Could not play audio. Try again or use headphones.');
         });
     }
   };
@@ -81,12 +92,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const handleLoadedMetadata = () => {
     if (!audioRef.current) return;
     setAudioDuration(audioRef.current.duration);
+    setError(null);
   };
 
   // Handle audio error
   const handleError = (e: Event) => {
     console.error('Audio error:', e);
     setIsPlaying(false);
+    setError('Error loading audio file. Please try again.');
   };
 
   // Function to restart current audio
@@ -183,21 +196,29 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         </div>
       </div>
       
-      {/* Audio progress bar and timer - only show if playing */}
-      {isPlaying && (
-        <div className="mt-3 mb-3">
-          <div className="flex justify-between text-xs text-navy-300 mb-1">
-            <span>{formatTime(audioProgress)}</span>
-            <span>{formatTime(audioDuration)}</span>
-          </div>
-          <div className="h-2 bg-navy-700 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gold-500 transition-all"
-              style={{ width: `${audioDuration ? (audioProgress / audioDuration) * 100 : 0}%` }}
-            ></div>
-          </div>
+      {/* Audio player - hidden but needed for browser support */}
+      <audio ref={audioRef} style={{ display: 'none' }} />
+      
+      {/* Error message */}
+      {error && (
+        <div className="text-amber-500 text-sm mb-2">
+          {error}
         </div>
       )}
+      
+      {/* Audio progress bar and timer - always show progress bar */}
+      <div className="mt-2 mb-3">
+        <div className="flex justify-between text-xs text-navy-300 mb-1">
+          <span>{formatTime(audioProgress)}</span>
+          <span>{formatTime(audioDuration)}</span>
+        </div>
+        <div className="h-2 bg-navy-700 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gold-500 transition-all"
+            style={{ width: `${audioDuration ? (audioProgress / audioDuration) * 100 : 0}%` }}
+          ></div>
+        </div>
+      </div>
     </div>
   );
 };

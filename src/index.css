@@ -17,3 +17,34 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+/* Utility class to hide scrollbars but maintain scroll functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* For Chrome, Safari and Opera */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fix text overflow issues */
+.truncate-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Prevent text from breaking out of containers */
+.word-break {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Responsive font sizing */
+@media (max-width: 640px) {
+  h1, h2, h3 {
+    word-break: break-word;
+  }
+}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Music, Search, Plus, X, Upload, Trash, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { Music, Search, Plus, X, Upload, Trash, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Filter, Play, Pause, Download } from 'lucide-react';
 import { API_URL } from '../../config/constants';
 import axios from 'axios';
+import AudioPlayer from '../../components/audio/AudioPlayer';
 
 interface AudioFile {
   _id: string;
@@ -35,6 +36,7 @@ const SonicLibrary: React.FC = () => {
 
   // State for expanded details
   const [expandedAudioId, setExpandedAudioId] = useState<string | null>(null);
+  const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
 
   // Fetch all audio files
   const fetchAudioFiles = async () => {
@@ -43,24 +45,56 @@ const SonicLibrary: React.FC = () => {
       const token = localStorage.getItem('token');
       
       if (!token) {
-        setError('Authentication required');
+        console.error('Authentication token missing');
+        setError('Authentication required - please log in again');
         return;
       }
+
+      // Log for debugging
+      console.log('Fetching audio files with token:', token.substring(0, 10) + '...');
 
       const response = await axios.get(`${API_URL}/audio-files`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+
+      console.log('Audio files response:', response.status);
+      
+      if (!response.data || !Array.isArray(response.data)) {
+        console.error('Invalid response format:', response.data);
+        setError('Invalid response format from server');
+        return;
+      }
 
       setAudioFiles(response.data);
       setFilteredAudioFiles(response.data);
       
       // Get all conditions (allowing duplicates) and sort them
       const allConditions = response.data.map((file: AudioFile) => file.condition);
-      setConditions(allConditions.sort());
+      // Remove duplicates without using Set spread operator
+      const uniqueConditions = allConditions.filter((value, index, self) => 
+        self.indexOf(value) === index
+      ).sort();
+      setConditions(uniqueConditions);
       
     } catch (error: any) {
       console.error('Error fetching audio files:', error);
-      setError(error.response?.data?.message || 'Error fetching audio files');
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+        
+        if (error.response.status === 401) {
+          setError('Session expired - please log in again');
+        } else if (error.response.status === 403) {
+          setError('Not authorized to access audio files - admin rights required');
+        } else {
+          setError(error.response.data?.message || `Error (${error.response.status}): ${error.response.statusText}`);
+        }
+      } else if (error.request) {
+        setError('No response from server - please check your network connection');
+      } else {
+        setError('Error fetching audio files: ' + error.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -186,16 +220,44 @@ const SonicLibrary: React.FC = () => {
       formData.append('frequencies', audioFrequencies);
     }
     
+    // Log upload attempt for debugging
+    console.log('Uploading audio file:', {
+      name: audioFileName,
+      condition: audioCondition,
+      fileType: audioFile.type,
+      fileSize: audioFile.size
+    });
+    
     setUploadLoading(true);
+    setUploadError(null);
     
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/audio-files/upload`, formData, {
+      
+      if (!token) {
+        setUploadError('Authentication required - please log in again');
+        setUploadLoading(false);
+        return;
+      }
+      
+      console.log('Upload token:', token.substring(0, 10) + '...');
+      
+      const response = await axios.post(`${API_URL}/audio-files/upload`, formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
+        },
+        // Add timeout and onUploadProgress for better UX
+        timeout: 120000, // 120 seconds timeout (2 minutes)
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            console.log(`Upload progress: ${percentCompleted}%`);
+          }
         }
       });
+      
+      console.log('Upload response:', response.data);
       
       // Reset form and show success message
       resetForm();
@@ -212,7 +274,27 @@ const SonicLibrary: React.FC = () => {
       
     } catch (error: any) {
       console.error('Error uploading audio file:', error);
-      setUploadError(error.response?.data?.message || 'Error uploading file');
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+        
+        if (error.response.status === 401) {
+          setUploadError('Session expired - please log in again');
+        } else if (error.response.status === 403) {
+          setUploadError('Not authorized to upload audio files - admin rights required');
+        } else if (error.response.status === 500) {
+          setUploadError('Server error - please try again with a smaller file or different format');
+        } else {
+          setUploadError(error.response.data?.message || `Error (${error.response.status}): ${error.response.statusText}`);
+        }
+      } else if (error.code === 'ECONNABORTED') {
+        setUploadError('Upload timed out. The file might be too large or the server is busy.');
+      } else if (error.request) {
+        setUploadError('No response received from server. Please check your connection and try again.');
+      } else {
+        setUploadError(error.message || 'Error uploading file');
+      }
     } finally {
       setUploadLoading(false);
     }
@@ -329,7 +411,7 @@ const SonicLibrary: React.FC = () => {
                       {audioFile ? 'Change File' : 'Select File'}
                       <input
                         type="file"
-                        accept="audio/*"
+                        accept="audio/mp3,audio/mpeg,audio/wav,audio/ogg,audio/x-m4a,audio/*"
                         onChange={handleFileChange}
                         className="hidden"
                       />
@@ -450,138 +532,100 @@ const SonicLibrary: React.FC = () => {
         </div>
 
         {/* Audio Files List */}
-        <div className="bg-navy-800 rounded-lg p-6 border border-navy-700">
-          <h2 className="text-xl font-semibold text-white mb-4">Audio Files</h2>
-          
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading ? (
-            <div className="text-center py-8">
-              <div className="animate-spin h-8 w-8 border-2 border-gold-500 border-t-transparent rounded-full mx-auto"></div>
-              <p className="text-navy-300 mt-4">Loading audio files...</p>
+            <div className="col-span-3 flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
             </div>
           ) : filteredAudioFiles.length === 0 ? (
-            <div className="text-center py-8">
-              <Music className="h-12 w-12 text-navy-500 mx-auto mb-4" />
-              <p className="text-navy-300">
-                {searchTerm || selectedCondition 
-                  ? 'No audio files match your search criteria' 
-                  : 'No audio files found in the database'}
-              </p>
-              {(searchTerm || selectedCondition) && (
-                <button
-                  onClick={() => {
-                    setSearchTerm('');
-                    setSelectedCondition('');
-                  }}
-                  className="mt-2 text-gold-500 hover:text-gold-400"
-                >
-                  Clear filters
-                </button>
-              )}
+            <div className="col-span-3 text-center text-navy-300 p-8">
+              {searchTerm || selectedCondition
+                ? 'No audio files found matching your search'
+                : 'No audio files in the library yet'}
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-8 gap-4 p-3 bg-navy-750 rounded-md text-navy-300 font-medium text-sm hidden md:grid">
-                <div className="col-span-2">Name</div>
-                <div className="col-span-2">Condition</div>
-                <div className="col-span-1">Size</div>
-                <div className="col-span-2">Date Added</div>
-                <div className="col-span-1">Actions</div>
-              </div>
-              
+            <>
               {filteredAudioFiles.map((file) => (
-                <div key={file._id} className="border border-navy-700 rounded-md overflow-hidden">
-                  {/* Mobile View */}
-                  <div className="md:hidden bg-navy-750 p-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-white font-medium">{file.name}</h3>
+                <div
+                  key={file._id}
+                  className="bg-navy-800 rounded-lg p-5 border border-navy-700 hover:border-navy-600 transition-colors flex flex-col"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{file.name}</h3>
+                      <p className="text-sm text-navy-300">{file.condition}</p>
+                    </div>
+                    <div className="flex space-x-2">
                       <button
                         onClick={() => toggleExpand(file._id)}
-                        className="text-navy-300 hover:text-gold-500"
+                        className="p-2 rounded-md bg-navy-700 hover:bg-navy-600 text-gold-500 transition-colors"
                       >
-                        {expandedAudioId === file._id ? 
-                          <ChevronUp className="w-5 h-5" /> : 
-                          <ChevronDown className="w-5 h-5" />
-                        }
+                        {expandedAudioId === file._id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                       </button>
-                    </div>
-                    <p className="text-navy-300 text-sm mt-1">{file.condition}</p>
-                    
-                    {expandedAudioId === file._id && (
-                      <div className="mt-3 pt-3 border-t border-navy-700">
-                        <p className="text-navy-300 text-sm flex justify-between">
-                          <span>Size:</span>
-                          <span>{formatFileSize(file.size)}</span>
-                        </p>
-                        <p className="text-navy-300 text-sm flex justify-between mt-1">
-                          <span>Date Added:</span>
-                          <span>{formatDate(file.createdAt)}</span>
-                        </p>
-                        {file.frequencies && file.frequencies.length > 0 && (
-                          <p className="text-navy-300 text-sm mt-1">
-                            <span className="block font-medium">Frequencies:</span>
-                            <span className="block mt-1">{file.frequencies.join(', ')} Hz</span>
-                          </p>
-                        )}
-                        <div className="flex justify-between items-center mt-3 pt-3 border-t border-navy-700">
-                          <a 
-                            href={`${API_URL}/audio-files/${file._id}`} 
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="bg-navy-700 hover:bg-navy-600 text-white py-1 px-3 rounded text-sm"
-                          >
-                            Listen
-                          </a>
-                          <button
-                            onClick={() => handleDeleteFile(file._id)}
-                            className="bg-red-900/30 hover:bg-red-800/50 text-red-300 py-1 px-3 rounded text-sm flex items-center"
-                          >
-                            <Trash className="w-4 h-4 mr-1" />
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Desktop View */}
-                  <div className="hidden md:grid grid-cols-8 gap-4 p-4 items-center">
-                    <div className="col-span-2 text-white">{file.name}</div>
-                    <div className="col-span-2 text-navy-300">{file.condition}</div>
-                    <div className="col-span-1 text-navy-300">{formatFileSize(file.size)}</div>
-                    <div className="col-span-2 text-navy-300">{formatDate(file.createdAt)}</div>
-                    <div className="col-span-1 flex space-x-2">
-                      <a 
-                        href={`${API_URL}/audio-files/${file._id}`} 
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="bg-navy-700 hover:bg-navy-600 text-white p-2 rounded"
-                        title="Listen to audio"
-                      >
-                        <Music className="w-4 h-4" />
-                      </a>
                       <button
                         onClick={() => handleDeleteFile(file._id)}
-                        className="bg-red-900/30 hover:bg-red-800/50 text-red-300 p-2 rounded"
-                        title="Delete audio"
+                        className="p-2 rounded-md bg-navy-700 hover:bg-red-600 text-red-500 hover:text-white transition-colors"
                       >
-                        <Trash className="w-4 h-4" />
+                        <Trash size={16} />
                       </button>
                     </div>
                   </div>
                   
-                  {/* Expanded Details for Desktop */}
+                  {/* Audio Player */}
+                  <div className="mt-3 mb-2">
+                    <AudioPlayer 
+                      audioUrl={`${API_URL}/audio-files/${file._id}`}
+                      audioTitle={file.name}
+                      onPlay={() => setCurrentlyPlaying(file._id)}
+                      onPause={() => setCurrentlyPlaying(null)}
+                    />
+                  </div>
+                  
+                  {/* File details */}
+                  <div className="mt-auto">
+                    <div className="flex justify-between text-xs text-navy-400">
+                      <span>Size: {formatFileSize(file.size)}</span>
+                      <span>Type: {file.contentType.split('/')[1]?.toUpperCase()}</span>
+                    </div>
+                    <div className="text-xs text-navy-400 mt-1">
+                      Added: {formatDate(file.createdAt)}
+                    </div>
+                  </div>
+                  
+                  {/* Expanded details */}
                   {expandedAudioId === file._id && (
-                    <div className="hidden md:block p-4 bg-navy-750 border-t border-navy-700">
-                      {file.frequencies && file.frequencies.length > 0 && (
-                        <p className="text-navy-300">
-                          <span className="font-medium">Frequencies:</span> {file.frequencies.join(', ')} Hz
-                        </p>
+                    <div className="mt-4 pt-3 border-t border-navy-700">
+                      <h4 className="font-medium text-white mb-2">Frequencies:</h4>
+                      {file.frequencies && file.frequencies.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {file.frequencies.map((freq, index) => (
+                            <span 
+                              key={index}
+                              className="text-xs bg-navy-700 text-navy-300 px-2 py-1 rounded-md"
+                            >
+                              {freq}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-navy-400">No frequencies specified</p>
                       )}
+                      
+                      <div className="mt-4 flex justify-end">
+                        <a
+                          href={`${API_URL}/audio-files/${file._id}`}
+                          download={`${file.name}.${file.contentType.split('/')[1]}`}
+                          className="flex items-center text-xs text-gold-500 hover:text-gold-400"
+                        >
+                          <Download size={14} className="mr-1" />
+                          Download File
+                        </a>
+                      </div>
                     </div>
                   )}
                 </div>
               ))}
-            </div>
+            </>
           )}
         </div>
       </div>

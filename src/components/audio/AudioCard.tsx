@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Music, Clock, AudioWaveform, ChevronDown, ChevronUp } from 'lucide-react';
 import AudioPlayer from './AudioPlayer';
+import { API_URL } from '../../config/constants';
 
 interface AudioCardProps {
   audioId: string;
@@ -35,7 +36,7 @@ const AudioCard: React.FC<AudioCardProps> = ({
         </div>
         <div className="flex-1">
           <AudioPlayer 
-            audioUrl={`http://localhost:5000/api/audio-files/${audioId}`}
+            audioUrl={`${API_URL}/audio-files/${audioId}`}
             audioTitle={audioName}
             onPlay={onPlay}
             onPause={onPause}

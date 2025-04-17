@@ -163,15 +163,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const token = localStorage.getItem('token');
       if (!token) return;
       
-      const response = await axios.post(
+      console.log('Checking package expiry for user:', userId);
+      const response = await axios.get(
         `${API_URL}/packages/check-expiry`,
-        {},
         {
           headers: {
             Authorization: `Bearer ${token}`
           }
         }
       );
+      
+      console.log('Package expiry check response:', response.data);
       
       if (response.data.success && response.data.updated) {
         console.log('Package expired and updated');

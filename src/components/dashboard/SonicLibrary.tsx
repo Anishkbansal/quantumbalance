@@ -14,10 +14,11 @@ interface AudioFile {
 }
 
 interface SonicLibraryProps {
-  isPremium: boolean;
+  isPremium?: boolean;
+  onPlayAudio?: (audioPath: string, audioTitle: string) => void;
 }
 
-const SonicLibrary: React.FC<SonicLibraryProps> = ({ isPremium }) => {
+const SonicLibrary: React.FC<SonicLibraryProps> = ({ isPremium = false, onPlayAudio }) => {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -146,6 +147,14 @@ const SonicLibrary: React.FC<SonicLibraryProps> = ({ isPremium }) => {
   // Handle when an audio starts playing
   const handleAudioStartPlaying = (audioId: string) => {
     setCurrentlyPlaying(audioId);
+    // Find the file and pass it to onPlayAudio if provided
+    if (onPlayAudio) {
+      const file = audioFiles.find(file => file._id === audioId);
+      if (file) {
+        const audioPath = `${API_URL}/audio-files/${audioId}`;
+        onPlayAudio(audioPath, file.name);
+      }
+    }
   };
 
   // Handle when an audio stops playing

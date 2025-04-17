@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Search, User, Shield, Package, Mail, Calendar, Eye, EyeOff, AlertCircle, CheckCircle, Phone, MapPin, Activity, Stethoscope, Clipboard, RefreshCw, X, ChevronLeft, ChevronRight, Music, Upload, FolderOpen } from 'lucide-react';
 import WellnessGraph from '../../components/WellnessGraph';
 import { API_URL } from '../../config/constants';
+import AudioPlayer from '../../components/audio/AudioPlayer';
 
 // User interface
 interface AdminUser {
@@ -145,7 +146,7 @@ const UserManagement: React.FC = () => {
           usersWithPrescriptions.map(async (user: AdminUser) => {
             try {
               const prescriptionResponse = await axios.get(
-                `http://localhost:5000/api/prescription/${user.activePrescriptionId}/basic`,
+                `${API_URL}/prescription/${user.activePrescriptionId}/basic`,
                 {
                   headers: { Authorization: token ? `Bearer ${token}` : '' }
                 }
@@ -199,7 +200,7 @@ const UserManagement: React.FC = () => {
       const token = localStorage.getItem('token');
       
       // Make API request with auth header
-      const response = await axios.get(`http://localhost:5000/api/auth/users/${userId}`, {
+      const response = await axios.get(`${API_URL}/auth/users/${userId}`, {
         withCredentials: true,
         headers: {
           Authorization: token ? `Bearer ${token}` : ''
@@ -253,20 +254,30 @@ const UserManagement: React.FC = () => {
   const fetchUserPackage = async (userId: string) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`http://localhost:5000/api/users/${userId}/package`, {
+      // Log for debugging
+      console.log('Fetching package for user:', userId);
+      
+      // Fix: Use the correct API endpoint
+      const response = await axios.get(`${API_URL}/packages/users/${userId}/package`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setUserPackage(response.data);
-    } catch (error) {
+      
+      console.log('Package response:', response.status);
+      setUserPackage(response.data.packageInfo || response.data);
+    } catch (error: any) {
       console.error('Error fetching user package:', error);
-      // If API fails, create package info from user data
+      
+      // Fall back to a default package from user data
       if (userDetails?.user) {
+        console.log('Creating fallback package from user data');
         setUserPackage({
           packageType: userDetails.user.packageType,
           purchaseDate: userDetails.user.joiningDate, // Use joining date as purchase date
           expiryDate: new Date(new Date(userDetails.user.joiningDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from joining
           status: 'active'
         });
+      } else {
+        console.error('No user details available for fallback package');
       }
     }
   };
@@ -306,7 +317,7 @@ const UserManagement: React.FC = () => {
       
       const token = localStorage.getItem('token');
       await axios.post(
-        `http://localhost:5000/api/prescriptions/${userDetails?.prescription?._id}/link-audio`,
+        `${API_URL}/prescriptions/${userDetails?.prescription?._id}/link-audio`,
         {
           frequencyId: selectedFrequency._id,
           audioId: audioId
@@ -334,6 +345,14 @@ const UserManagement: React.FC = () => {
       return;
     }
     
+    // Log upload attempt for debugging
+    console.log('Uploading audio file in UserManagement:', {
+      name: audioFileName,
+      condition: audioCondition,
+      fileType: audioFile.type,
+      fileSize: audioFile.size
+    });
+    
     setAudioUploadLoading(true);
     setAudioUploadError(null);
     
@@ -345,16 +364,45 @@ const UserManagement: React.FC = () => {
       formData.append('frequencies', audioFrequencies);
       
       const token = localStorage.getItem('token');
+      
+      if (!token) {
+        setAudioUploadError('Authentication required - please log in again');
+        setAudioUploadLoading(false);
+        return;
+      }
+      
+      console.log('Upload token:', token.substring(0, 10) + '...');
+      
       const response = await axios.post(`${API_URL}/audio-files/upload`, formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
+        },
+        // Add timeout and progress tracking for better UX
+        timeout: 120000, // 120 seconds timeout
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            console.log(`Upload progress: ${percentCompleted}%`);
+          }
         }
       });
       
+      console.log('Upload response:', response.data);
+      
       // If upload successful, link to the prescription frequency
-      if (response.data._id) {
-        await linkAudioToFrequency(response.data._id);
+      if (response.data && response.data.success) {
+        if (response.data.audioFile && response.data.audioFile._id) {
+          await linkAudioToFrequency(response.data.audioFile._id);
+        } else if (response.data._id) {
+          await linkAudioToFrequency(response.data._id);
+        } else {
+          console.error('No audio ID found in response', response.data);
+          setAudioUploadError('Upload succeeded but could not link to prescription - please try again');
+        }
+      } else {
+        console.error('Upload response not successful', response.data);
+        setAudioUploadError('Upload response indicates failure - please try again');
       }
       
       // Reset form
@@ -368,7 +416,27 @@ const UserManagement: React.FC = () => {
       fetchAudioFiles();
     } catch (error: any) {
       console.error('Error uploading file:', error);
-      setAudioUploadError(error.response?.data?.message || 'Error uploading file');
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+        
+        if (error.response.status === 401) {
+          setAudioUploadError('Session expired - please log in again');
+        } else if (error.response.status === 403) {
+          setAudioUploadError('Not authorized to upload audio files - admin rights required');
+        } else if (error.response.status === 500) {
+          setAudioUploadError('Server error - please try again with a smaller file or different format');
+        } else {
+          setAudioUploadError(error.response?.data?.message || `Error (${error.response.status}): ${error.response.statusText}`);
+        }
+      } else if (error.code === 'ECONNABORTED') {
+        setAudioUploadError('Upload timed out. The file might be too large or the server is busy.');
+      } else if (error.request) {
+        setAudioUploadError('No response received from server. Please check your connection and try again.');
+      } else {
+        setAudioUploadError(error.message || 'Error uploading file');
+      }
     } finally {
       setAudioUploadLoading(false);
     }
@@ -474,22 +542,10 @@ const UserManagement: React.FC = () => {
                   {/* Display linked audio if exists */}
                   {freq.audioId && (
                     <div className="mt-3 p-2 bg-navy-700 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <Music className="w-4 h-4 text-gold-500 mr-2" />
-                          <span className="text-sm text-navy-300">Audio File Linked</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <a 
-                            href={`http://localhost:5000/api/audio-files/${freq.audioId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2 py-1 bg-navy-600 text-white text-xs rounded hover:bg-navy-500 transition-colors"
-                          >
-                            Download
-                          </a>
-                        </div>
-                      </div>
+                      <AudioPlayer
+                        audioUrl={`${API_URL}/audio-files/${freq.audioId}`}
+                        audioTitle={`${freq.value.join(', ')} Hz`}
+                      />
                     </div>
                   )}
                 </div>
@@ -595,14 +651,20 @@ const UserManagement: React.FC = () => {
                       </div>
                       
                       <div>
-                        <label className="text-navy-300 text-sm block mb-1">Audio File* (mp3, wav, opus, etc.)</label>
-                        <input
-                          type="file"
-                          onChange={(e) => setAudioFile(e.target.files ? e.target.files[0] : null)}
-                          accept="audio/*"
-                          className="w-full px-3 py-2 bg-navy-750 border border-navy-600 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-gold-500"
-                          required
-                        />
+                        <label className="text-navy-300 text-sm block mb-1">Audio File* (mp3, wav, ogg, m4a, etc.)</label>
+                        <div>
+                          <input
+                            type="file"
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files[0]) {
+                                setAudioFile(e.target.files[0]);
+                              }
+                            }}
+                            accept="audio/mp3,audio/mpeg,audio/wav,audio/ogg,audio/vorbis,audio/x-m4a,audio/*"
+                            className="w-full px-3 py-2 bg-navy-750 border border-navy-600 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-gold-500 file:bg-navy-600 file:text-white file:border-0 file:px-3 file:py-1 file:mr-2 file:rounded-md hover:file:bg-navy-500"
+                            required
+                          />
+                        </div>
                       </div>
                       
                       <div className="flex space-x-3">

@@ -11,6 +11,7 @@ import UserMessaging from '../components/messaging/UserMessaging';
 import UnreadIndicator from '../components/messaging/UnreadIndicator';
 import SonicLibrary from '../components/dashboard/SonicLibrary';
 import DashboardTabs from '../components/dashboard/DashboardTabs';
+import VerificationBanner from '../components/auth/VerificationBanner';
 import { API_URL } from '../config/constants';
 
 // Define the User interface
@@ -820,7 +821,7 @@ const Dashboard = () => {
       if (!token) return null;
       
       const response = await fetch(
-        `http://localhost:5000/api/audio-files/${audioId}/details`,
+        `${API_URL}/audio-files/${audioId}/details`,
         {
           method: 'GET',
           headers: {
@@ -960,7 +961,7 @@ const Dashboard = () => {
                               </div>
                               <div className="flex items-center space-x-2">
                                 {freq.audioId && currentlyPlaying === (freq.audioId 
-                                  ? `http://localhost:5000/api/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
+                                  ? `${API_URL}/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
                                   : `/audios/freq_${freq.value[0]}.mp3`) && (
                                   <>
                                     {/* Restart button */}
@@ -1007,21 +1008,21 @@ const Dashboard = () => {
                                       
                                       handlePlayAudio(
                                         audioId 
-                                          ? `http://localhost:5000/api/audio-files/${audioId}` 
+                                          ? `${API_URL}/audio-files/${audioId}` 
                                           : `/audios/freq_${freq.value[0]}.mp3`, 
                                         getAudioName(freq)
                                       );
                                     }}
                                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
                                       currentlyPlaying === (freq.audioId 
-                                        ? `http://localhost:5000/api/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
+                                        ? `${API_URL}/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
                                         : `/audios/freq_${freq.value[0]}.mp3`) 
                                         ? 'bg-gold-500 text-navy-900 shadow-lg shadow-gold-500/20' 
                                         : 'bg-navy-700 text-gold-500 hover:bg-navy-600'
                                     }`}
                                   >
                                     {currentlyPlaying === (freq.audioId 
-                                      ? `http://localhost:5000/api/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
+                                      ? `${API_URL}/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
                                       : `/audios/freq_${freq.value[0]}.mp3`) ? 
                                       <Pause className="w-5 h-5" /> : 
                                       <Play className="w-5 h-5" />
@@ -1033,7 +1034,7 @@ const Dashboard = () => {
                             
                             {/* Audio progress bar and timer - only show if playing */}
                             {freq.audioId && currentlyPlaying === (freq.audioId 
-                              ? `http://localhost:5000/api/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
+                              ? `${API_URL}/audio-files/${typeof freq.audioId === 'object' ? freq.audioId._id : freq.audioId}` 
                               : `/audios/freq_${freq.value[0]}.mp3`) && (
                               <div className="mt-3 mb-3">
                                 <div className="flex justify-between text-xs text-navy-300 mb-1">
@@ -1206,155 +1207,231 @@ const Dashboard = () => {
     return <UserMessaging />;
   };
   
-  // Update the main render section to use the DashboardTabs component
-  return (
-    <div className="min-h-screen bg-navy-900 py-8">
-      <div className="max-w-7xl mx-auto">
-        {error && (
-          <div className="mb-6 p-4 rounded-md bg-red-900/50 text-red-300 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            <span>{error}</span>
-          </div>
-        )}
-        
-        {message && (
-          <div className="mb-6 p-4 rounded-md bg-green-900/50 text-green-300 flex items-center gap-2">
-            <Check className="w-5 h-5" />
-            <span>{message}</span>
-          </div>
-        )}
-
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gold-500 mb-2">Your Dashboard</h1>
-            <p className="text-navy-300">Welcome to your personalized quantum healing dashboard</p>
-          </div>
-          
-          {/* User Profile Picture */}
-          <div className="flex items-center space-x-4">
-            <div className="text-right mr-4">
-              <p className="text-white font-medium">{user?.name}</p>
-              <p className="text-navy-300 text-sm">{user?.email}</p>
-            </div>
-            <div className="relative h-12 w-12 rounded-full overflow-hidden border-2 border-gold-500">
-              {user?.profile?.avatar ? (
-                <img 
-                  src={user.profile.avatar}
-                  alt="Profile" 
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="h-full w-full flex items-center justify-center bg-navy-700">
-                  <UserIcon className="h-6 w-6 text-navy-300" />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Subscription Status */}
-        <div className="flex flex-wrap mb-8">
-          <div className="w-full lg:w-1/2 p-4">
-            <div className="bg-navy-800 rounded-lg shadow-md p-6 border border-navy-700">
-              <div className="mb-4 border-b border-navy-700 pb-4">
-                <p className="text-navy-300 mb-1">Current Package:</p>
-                <h2 className="text-xl font-bold text-gold-500 capitalize">
-                  {loading ? 'Loading...' : (activePackage ? activePackage.name : 'No Active Package')}
-                </h2>
+  // Function to render tabs for mobile and desktop
+  const renderTabs = () => {
+    return (
+      <div className="mb-6">
+        <div className="border-b border-navy-700">
+          <nav className="-mb-px flex overflow-x-auto pb-1 hide-scrollbar">
+            <button
+              onClick={() => setActiveTab('prescriptions')}
+              className={`whitespace-nowrap mr-1 py-2 px-3 sm:px-4 text-xs sm:text-sm font-medium rounded-t-lg ${
+                activeTab === 'prescriptions'
+                  ? 'bg-navy-700 text-gold-500 border-t border-l border-r border-navy-600'
+                  : 'text-navy-300 hover:text-navy-200'
+              }`}
+            >
+              <div className="flex items-center">
+                <AudioWaveform className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
+                <span>Prescriptions</span>
               </div>
-              
-              {activePackage && packageTimeRemaining ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-navy-300">Expires in:</span>
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col items-center">
-                        <span className="text-gold-500 text-lg font-semibold">{packageTimeRemaining.days}</span>
-                        <span className="text-navy-300 text-xs">days</span>
-                      </div>
-                      <span className="text-navy-400">:</span>
-                      <div className="flex flex-col items-center">
-                        <span className="text-gold-500 text-lg font-semibold">{packageTimeRemaining.hours}</span>
-                        <span className="text-navy-300 text-xs">hours</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-right">
-                    <span className="text-navy-300 text-sm">
-                      {packageTimeRemaining.formattedDate}
-                    </span>
-                  </div>
-                  
-                  <div className="w-full bg-navy-700 h-2 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-gradient-to-r from-gold-600 to-gold-400 h-full rounded-full"
-                      style={{ 
-                        width: `${Math.max(
-                          5, 
-                          Math.min(
-                            100, 
-                            100 - (packageTimeRemaining.days / 30) * 100
-                          )
-                        )}%` 
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-navy-300 mb-4">
-                    You don't have an active package or your package has expired.
-                  </p>
-                  <button 
-                    onClick={() => navigate('/packages')}
-                    className="bg-gold-500 hover:bg-gold-600 text-navy-900 py-2 px-4 rounded-md"
-                  >
-                    Purchase a Package
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('wellness')}
+              className={`whitespace-nowrap mr-1 py-2 px-3 sm:px-4 text-xs sm:text-sm font-medium rounded-t-lg ${
+                activeTab === 'wellness'
+                  ? 'bg-navy-700 text-gold-500 border-t border-l border-r border-navy-600'
+                  : 'text-navy-300 hover:text-navy-200'
+              }`}
+            >
+              <div className="flex items-center">
+                <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
+                <span>Wellness Tracker</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('messages')}
+              className={`whitespace-nowrap mr-1 py-2 px-3 sm:px-4 text-xs sm:text-sm font-medium rounded-t-lg ${
+                activeTab === 'messages'
+                  ? 'bg-navy-700 text-gold-500 border-t border-l border-r border-navy-600'
+                  : 'text-navy-300 hover:text-navy-200'
+              }`}
+            >
+              <div className="flex items-center">
+                <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
+                <span>Messages</span>
+                <UnreadIndicator userId={user?._id} minimal={true} />
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('sonic-library')}
+              className={`whitespace-nowrap mr-1 py-2 px-3 sm:px-4 text-xs sm:text-sm font-medium rounded-t-lg ${
+                activeTab === 'sonic-library'
+                  ? 'bg-navy-700 text-gold-500 border-t border-l border-r border-navy-600'
+                  : 'text-navy-300 hover:text-navy-200'
+              }`}
+            >
+              <div className="flex items-center">
+                <Music className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
+                <span>Sonic Library</span>
+              </div>
+            </button>
+          </nav>
         </div>
+      </div>
+    );
+  };
 
-        {/* Tabs navigation - use DashboardTabs component */}
-        <DashboardTabs 
-          activeTab={activeTab} 
-          onTabChange={setActiveTab}
-          hasUnreadMessages={false} // TODO: Implement unread message functionality
-          isPremiumUser={user?.packageType === 'premium'}
-        />
-        
-        {/* Tab Content */}
-        <div className="bg-navy-800 p-6 rounded-lg border border-navy-700">
-          {activeTab === 'prescriptions' && (
-            loading ? (
-              <div className="flex justify-center items-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
+  return (
+    <div className="bg-navy-900 text-white min-h-screen">
+      {!user?.isVerified && <VerificationBanner />}
+      
+      <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+        {/* Dashboard Header */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+            <h1 className="text-2xl sm:text-3xl font-bold mb-2 sm:mb-0">Your Wellness Dashboard</h1>
+            
+            {/* Package Info */}
+            {activePackage ? (
+              <div className="flex flex-col sm:flex-row sm:items-center bg-navy-800 p-3 sm:p-4 rounded-lg border border-navy-700 max-w-full sm:max-w-md">
+                <div className="flex-1 min-w-0">
+                  <p className="text-gold-500 font-medium text-sm sm:text-base truncate">{activePackage.name}</p>
+                  
+                  {packageTimeRemaining && (
+                    <div className="flex items-center mt-1">
+                      <Clock className="w-3.5 h-3.5 text-navy-400 mr-1" />
+                      <p className="text-navy-300 text-xs sm:text-sm">
+                        {packageTimeRemaining.days > 0 ? (
+                          <span>{packageTimeRemaining.days} days remaining</span>
+                        ) : packageTimeRemaining.hours > 0 ? (
+                          <span>{packageTimeRemaining.hours} hours remaining</span>
+                        ) : (
+                          <span>Expires soon</span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                
+                <button
+                  onClick={() => navigate('/packages')}
+                  className="mt-2 sm:mt-0 sm:ml-4 px-3 py-1.5 text-xs font-medium bg-navy-700 hover:bg-navy-600 rounded-lg transition text-navy-300 flex items-center justify-center"
+                >
+                  <Package className="w-3.5 h-3.5 mr-1" />
+                  <span>Manage</span>
+                </button>
               </div>
             ) : (
-              renderPrescriptionsSection()
-            )
-          )}
-          
-          {activeTab === 'wellness' && <WellnessTracker />}
-          
-          {activeTab === 'sonic-library' && <SonicLibrary isPremium={user?.packageType === 'premium'} />}
-          
-          {activeTab === 'messages' && renderMessagesSection()}
+              <button
+                onClick={() => navigate('/packages')}
+                className="px-3 py-1.5 text-xs sm:text-sm font-medium bg-gold-500 hover:bg-gold-400 text-navy-900 rounded-lg transition flex items-center"
+              >
+                <Package className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" />
+                <span>Upgrade to Premium</span>
+              </button>
+            )}
+          </div>
         </div>
         
-        {/* Wellness Reminder Modal */}
-        {showWellnessReminder && !loading && user && !user.isAdmin && user.packageType !== 'none' && (
-          <div className="fixed inset-0 bg-navy-900/80 flex items-center justify-center z-50 p-4">
-            <WellnessTracker 
-              showReminderOnly={true}
-              onClose={() => setShowWellnessReminder(false)}
-            />
+        {/* Error Messages */}
+        {error && (
+          <div className="mb-6 flex items-start space-x-2 bg-red-900/20 border border-red-800 text-red-300 p-3 rounded-lg">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <p>{error}</p>
           </div>
         )}
+        
+        {/* Success Messages */}
+        {message && (
+          <div className="mb-6 flex items-start space-x-2 bg-green-900/20 border border-green-800 text-green-300 p-3 rounded-lg">
+            <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <p>{message}</p>
+          </div>
+        )}
+        
+        {/* Tabs Navigation */}
+        {renderTabs()}
+        
+        {/* Tab Content */}
+        <div className="bg-navy-800 rounded-lg border border-navy-700 p-4 sm:p-6">
+          {activeTab === 'prescriptions' && renderPrescriptionsSection()}
+          {activeTab === 'wellness' && <WellnessTracker />}
+          {activeTab === 'messages' && renderMessagesSection()}
+          {activeTab === 'sonic-library' && <SonicLibrary onPlayAudio={handlePlayAudio} />}
+        </div>
       </div>
+      
+      {/* Audio Player */}
+      {currentlyPlaying && (
+        <div className="fixed bottom-0 left-0 right-0 bg-navy-800 border-t border-navy-700 p-3 sm:p-4">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center">
+              <div className="flex-1 min-w-0 mb-2 sm:mb-0">
+                <p className="text-white font-medium text-sm sm:text-base truncate">{currentlyPlaying}</p>
+                <div className="mt-1.5 flex items-center space-x-2">
+                  <div className="relative flex-1 h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                    <div 
+                      className="absolute left-0 top-0 h-full bg-gold-500" 
+                      style={{ width: `${audioProgress}%` }}
+                    ></div>
+                  </div>
+                  <span className="text-navy-300 text-xs">{formatTime(audioDuration * (audioProgress / 100))}/{formatTime(audioDuration)}</span>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={handleRestartAudio}
+                  className="p-2 bg-navy-700 text-navy-300 hover:bg-navy-600 hover:text-white rounded-full"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 2v8h8"></path>
+                    <path d="M1 8a11 11 0 0 1 22 0c0 6-9 12-10 12-2 0-10-6-10-12a11 11 0 0 1 9-10"></path>
+                  </svg>
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    if (audioRef) {
+                      if (audioRef.paused) {
+                        audioRef.play();
+                      } else {
+                        audioRef.pause();
+                      }
+                    }
+                  }}
+                  className="p-2.5 bg-gold-500 text-navy-900 hover:bg-gold-400 rounded-full"
+                >
+                  {audioRef && !audioRef.paused ? (
+                    <Pause className="w-5 h-5" />
+                  ) : (
+                    <Play className="w-5 h-5" />
+                  )}
+                </button>
+                
+                <button 
+                  onClick={handleToggleLoop}
+                  className={`p-2 ${isLooping ? 'bg-gold-500/20 text-gold-500' : 'bg-navy-700 text-navy-300'} hover:bg-navy-600 hover:text-white rounded-full`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 2l4 4-4 4"></path>
+                    <path d="M3 11v-1a4 4 0 0 1 4-4h14"></path>
+                    <path d="M7 22l-4-4 4-4"></path>
+                    <path d="M21 13v1a4 4 0 0 1-4 4H3"></path>
+                  </svg>
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    if (audioRef) {
+                      audioRef.pause();
+                      setCurrentlyPlaying(null);
+                      setAudioRef(null);
+                    }
+                  }}
+                  className="p-2 bg-navy-700 text-navy-300 hover:bg-navy-600 hover:text-white rounded-full"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6L6 18"></path>
+                    <path d="M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

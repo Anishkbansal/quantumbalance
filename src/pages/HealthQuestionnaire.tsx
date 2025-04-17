@@ -9,6 +9,7 @@ import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 import StripePayment from '../components/payment/StripePayment';
 import { API_URL } from '../config/constants';
+import { toast } from 'react-hot-toast';
 
 // Get publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || '';
@@ -35,6 +36,36 @@ const HealthQuestionnaire = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, updateUser } = useAuth();
+  
+  // Redirect if user is not authenticated
+  useEffect(() => {
+    if (!user) {
+      navigate('/login', { 
+        state: { 
+          from: '/health-questionnaire',
+          message: 'Please log in to access the health questionnaire'
+        } 
+      });
+    }
+  }, [user, navigate]);
+
+  // Redirect if user's email is not verified
+  useEffect(() => {
+    if (user && !user.isVerified && !user.isAdmin) {
+      // Show error and redirect to verification page
+      toast.error('Email verification required to access this feature', {
+        duration: 5000,
+        position: 'top-center',
+      });
+      
+      navigate('/verify-email', { 
+        state: { 
+          from: '/health-questionnaire',
+          message: 'Please verify your email to continue with the health questionnaire'
+        } 
+      });
+    }
+  }, [user, navigate]);
   
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

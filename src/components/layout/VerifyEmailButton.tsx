@@ -16,10 +16,10 @@ const VerifyEmailButton: React.FC = () => {
   return (
     <button
       onClick={() => navigate('/verify-email')}
-      className="mt-4 w-full flex items-center justify-center gap-2 py-2 px-4 rounded-md bg-yellow-600 hover:bg-yellow-700 text-white font-medium transition-colors text-sm"
+      className="mt-3 sm:mt-4 w-full flex items-center justify-center gap-1.5 sm:gap-2 py-1.5 sm:py-2 px-3 sm:px-4 rounded-md bg-yellow-600 hover:bg-yellow-700 text-white font-medium transition-colors text-xs sm:text-sm whitespace-nowrap"
     >
-      <MailCheck className="w-4 h-4" />
-      <span>Verify Email Now</span>
+      <MailCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+      <span className="truncate">Verify Email Now</span>
     </button>
   );
 };

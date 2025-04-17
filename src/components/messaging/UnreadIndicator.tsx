@@ -6,9 +6,11 @@ import { API_URL } from '../../config/constants';
 
 interface UnreadIndicatorProps {
   className?: string;
+  userId?: string;
+  minimal?: boolean;
 }
 
-const UnreadIndicator: React.FC<UnreadIndicatorProps> = ({ className = '' }) => {
+const UnreadIndicator: React.FC<UnreadIndicatorProps> = ({ className = '', userId, minimal = false }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const { user } = useAuth();
   
@@ -48,7 +50,16 @@ const UnreadIndicator: React.FC<UnreadIndicatorProps> = ({ className = '' }) => 
   }, [isUserLoggedIn]);
   
   if (!isUserLoggedIn || unreadCount === 0) {
-    return <MessageSquare className={`h-5 w-5 text-navy-300 ${className}`} />;
+    return null;
+  }
+  
+  // Return a smaller version when minimal is true
+  if (minimal) {
+    return (
+      <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-navy-900 shadow-md border border-navy-700">
+        {unreadCount > 9 ? '9+' : unreadCount}
+      </span>
+    );
   }
   
   return (
