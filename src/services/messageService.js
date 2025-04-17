@@ -297,7 +297,7 @@ export const markAllMessagesInConversationAsRead = async (conversationId, userId
     }
     
     // Check if user is part of this conversation
-    const isParticipant = conversation.participants.some(p => p.toString() === userId);
+    const isParticipant = conversation.participants.some(p => p.toString() === userId.toString());
     if (!isParticipant) {
       console.error(`User ${userId} is not part of conversation ${conversationId}`);
       return { success: false, message: 'User not part of this conversation' };
@@ -319,7 +319,7 @@ export const markAllMessagesInConversationAsRead = async (conversationId, userId
     
     conversation.messages.forEach((message, index) => {
       const isSender = message.sender.toString() === userId;
-      const isRecipient = message.sender.toString() === conversationPartner.toString();
+      const isRecipient = !isSender && message.sender.toString() === conversationPartner.toString();
       
       // User is sender of this message and hasn't marked it as read by sender
       if (isSender && !message.readBySender) {

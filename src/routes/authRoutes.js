@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, logout, getUser, getAllUsers, getUserDetails, adminCreateUser, verifyEmail, sendVerificationCode, cleanupUnverifiedUsers, deleteAccount, sendDeletionCode, updateProfile, verifyAdminOTP, generateAdminOTP, logoutAllAdmins } from '../controllers/authController.js';
+import { register, login, logout, getUser, getAllUsers, getUserDetails, adminCreateUser, verifyEmail, sendVerificationCode, cleanupUnverifiedUsers, deleteAccount, sendDeletionCode, updateProfile, verifyAdminOTP, generateAdminOTP, logoutAllAdmins, forgotPassword, resetPassword } from '../controllers/authController.js';
 import { protect, adminOnly } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -36,6 +36,10 @@ router.get('/admin/logout-all/:token', logoutAllAdmins);
 // Verification routes
 router.post('/verify-email', verifyEmail);
 router.post('/send-verification', sendVerificationCode);
+
+// Password reset routes
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 // Account deletion routes
 router.post('/delete-account', protect, deleteAccount);

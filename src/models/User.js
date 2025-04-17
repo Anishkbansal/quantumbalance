@@ -163,6 +163,15 @@ const UserSchema = new Schema({
     type: Date,
     select: true,
   },
+  // Password reset fields
+  resetPasswordToken: {
+    type: String,
+    select: true,
+  },
+  resetPasswordExpires: {
+    type: Date,
+    select: true,
+  },
   // Stripe customer ID for payment processing
   stripeCustomerId: {
     type: String,

@@ -997,4 +997,137 @@ export const logoutAllAdmins = async (req, res) => {
       error: error.message
     });
   }
+};
+
+// Forgot Password - send reset email
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Please provide an email address' });
+    }
+    
+    // Find user
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      // We don't want to reveal whether an email exists in our system
+      // for security reasons
+      return res.status(200).json({ 
+        success: true, 
+        message: 'If this email exists in our system, a password reset link has been sent.' 
+      });
+    }
+
+    // Generate password reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    
+    // Set token hash and expiration (1 hour from now)
+    user.resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+      
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    
+    await user.save();
+    
+    // Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+    
+    // Send reset email using the emailService utility
+    try {
+      await sendVerificationEmail(
+        user.email,
+        'Reset Your Password',
+        `You are receiving this email because you (or someone else) has requested the reset of a password. 
+        Please click on the following link, or paste this into your browser to complete the process:
+        
+        ${resetUrl}
+        
+        This link will expire in 1 hour.
+        
+        If you did not request this, please ignore this email and your password will remain unchanged.`
+      );
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Password reset email sent'
+      });
+    } catch (emailError) {
+      console.error('Error sending reset email:', emailError);
+      
+      // Reset user token fields if email fails
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpires = undefined;
+      await user.save();
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Error sending reset email. Please try again later.'
+      });
+    }
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error processing request', 
+      error: error.message 
+    });
+  }
+};
+
+// Reset Password - process password reset
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    
+    if (!token || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Please provide both token and new password' 
+      });
+    }
+    
+    // Hash the token from the URL to compare with hashed token in DB
+    const resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+    
+    // Find user with this token and check if token is still valid
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+    
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password reset token is invalid or has expired'
+      });
+    }
+    
+    // Set new password
+    user.password = password;
+    
+    // Clear reset token fields
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    
+    await user.save();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error resetting password', 
+      error: error.message 
+    });
+  }
 }; 

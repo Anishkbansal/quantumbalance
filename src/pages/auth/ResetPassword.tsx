@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Lock, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import axios from 'axios';
 
 const ResetPassword: React.FC = () => {
   const { token } = useParams<{ token: string }>();
@@ -27,16 +28,10 @@ const ResetPassword: React.FC = () => {
           return;
         }
         
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // For the initial load, we'll just assume the token is valid
+        // The actual validation will happen when the user submits the form
+        setTokenValid(true);
         
-        // For demo, consider any token that's 6+ characters as valid
-        if (token.length >= 6) {
-          setTokenValid(true);
-        } else {
-          setError('Invalid or expired reset link');
-          setTokenValid(false);
-        }
       } catch (err: any) {
         console.error('Error verifying reset token:', err);
         setError(err.message || 'Invalid or expired reset link');
@@ -72,19 +67,30 @@ const ResetPassword: React.FC = () => {
     setError(null);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Call the real API endpoint
+      const response = await axios.post('/api/auth/reset-password', {
+        token,
+        password
+      });
       
-      // Always succeed in demo mode
-      setSuccess(true);
-      
-      // Redirect to login after 3 seconds
-      setTimeout(() => {
-        navigate('/login');
-      }, 3000);
+      if (response.data.success) {
+        setSuccess(true);
+        
+        // Redirect to login after 3 seconds
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      } else {
+        setError(response.data.message || 'Failed to reset password');
+      }
     } catch (err: any) {
       console.error('Error resetting password:', err);
-      setError(err.message || 'Failed to reset password');
+      setError(err.response?.data?.message || err.message || 'Failed to reset password');
+      
+      // If token is invalid, mark it as invalid to show the proper UI
+      if (err.response?.status === 400 && err.response?.data?.message?.includes('token')) {
+        setTokenValid(false);
+      }
     } finally {
       setLoading(false);
     }
@@ -215,11 +221,6 @@ const ResetPassword: React.FC = () => {
                       'Reset Password'
                     )}
                   </button>
-                </div>
-                
-                <div className="mt-4 p-3 bg-navy-700/50 rounded-md text-xs text-navy-300">
-                  <p className="font-medium">Demo mode:</p>
-                  <p>In this demo version, the reset feature will always succeed without actually changing any password.</p>
                 </div>
               </form>
               

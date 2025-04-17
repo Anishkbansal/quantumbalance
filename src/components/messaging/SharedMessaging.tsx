@@ -68,6 +68,10 @@ const SharedMessaging: React.FC<SharedMessagingProps> = ({ isAdmin }) => {
   // Store timers for cleanup
   const readTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const batchReadTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  // Store previous message IDs to compare for changes
+  const previousMessagesRef = useRef<string[]>([]);
   
   // Determine if we can show the messaging UI
   const hasActivePackage = isAdmin || (user?.packageType && user.packageType !== 'none');
@@ -172,9 +176,6 @@ const SharedMessaging: React.FC<SharedMessagingProps> = ({ isAdmin }) => {
   useEffect(() => {
     if (!user || messages.length === 0) return;
     
-    // Clear the process queue between renders
-    setProcessingMessageIds(new Set());
-    
     // Process any pending read messages in batches
     const processBatchReads = () => {
       // Only process if we have pending reads and enough time has passed (2 seconds)
@@ -273,87 +274,106 @@ const SharedMessaging: React.FC<SharedMessagingProps> = ({ isAdmin }) => {
       processBatchReads();
     }, 2000);
     
-    // Create an observer to detect when messages become visible
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            // Get the message ID from the element's data attribute
-            const messageId = entry.target.getAttribute('data-message-id');
-            
-            if (messageId) {
-              // Find the message
-              const message = messages.find(msg => msg._id === messageId);
+    // Check if message IDs have changed before creating a new observer
+    const currentMessageIds = messages.map(msg => msg._id).join(',');
+    const previousMessageIds = previousMessagesRef.current.join(',');
+    
+    // Only recreate the observer if messages have changed
+    if (currentMessageIds !== previousMessageIds) {
+      // Store the current message IDs for the next comparison
+      previousMessagesRef.current = messages.map(msg => msg._id);
+      
+      // Clean up existing observer if there is one
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+      
+      // Create a new observer
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              // Get the message ID from the element's data attribute
+              const messageId = entry.target.getAttribute('data-message-id');
               
-              // Only process unread messages sent to the current user
-              if (message && 
-                  message.recipient === user._id && 
-                  !message.readByRecipient && 
-                  !visibleMessages.has(messageId) && 
-                  !processingMessageIds.has(messageId)) {
+              if (messageId) {
+                // Find the message
+                const message = messages.find(msg => msg._id === messageId);
+                
+                // Only process unread messages sent to the current user
+                if (message && 
+                    message.recipient === user._id && 
+                    !message.readByRecipient && 
+                    !visibleMessages.has(messageId) && 
+                    !processingMessageIds.has(messageId)) {
+                    
+                  // Add to visible messages so we don't process it again
+                  setVisibleMessages(prev => {
+                    const newSet = new Set(prev);
+                    newSet.add(messageId);
+                    return newSet;
+                  });
                   
-                // Add to visible messages so we don't process it again
-                setVisibleMessages(prev => {
-                  const newSet = new Set(prev);
-                  newSet.add(messageId);
-                  return newSet;
-                });
-                
-                // Add to processing set to prevent duplicate processing
-                setProcessingMessageIds(prev => {
-                  const newSet = new Set(prev);
-                  newSet.add(messageId);
-                  return newSet;
-                });
-                
-                // Update the message in local state for immediate feedback
-                setMessages(prev => 
-                  prev.map(msg => 
-                    msg._id === messageId 
-                      ? { ...msg, readByRecipient: true } 
-                      : msg
-                  )
-                );
-                
-                // Add to pending reads batch
-                setPendingReads(prev => [...prev, messageId]);
-                
-                // Stop observing this message
-                observer.unobserve(entry.target);
+                  // Add to processing set to prevent duplicate processing
+                  setProcessingMessageIds(prev => {
+                    const newSet = new Set(prev);
+                    newSet.add(messageId);
+                    return newSet;
+                  });
+                  
+                  // Update the message in local state for immediate feedback
+                  setMessages(prev => 
+                    prev.map(msg => 
+                      msg._id === messageId 
+                        ? { ...msg, readByRecipient: true } 
+                        : msg
+                    )
+                  );
+                  
+                  // Add to pending reads batch
+                  setPendingReads(prev => [...prev, messageId]);
+                  
+                  // Stop observing this message
+                  if (observerRef.current) {
+                    observerRef.current.unobserve(entry.target);
+                  }
+                }
               }
             }
-          }
-        });
-      },
-      { threshold: 0.5 } // Consider message visible when 50% in view
-    );
-    
-    // Observe all unread messages sent to the current user
-    const messagesToObserve = messages.filter(message => 
-      message.recipient === user._id && 
-      !message.readByRecipient &&
-      !visibleMessages.has(message._id) &&
-      !processingMessageIds.has(message._id)
-    );
-    
-    console.log(`Observing ${messagesToObserve.length} unread messages`);
-    
-    messagesToObserve.forEach(message => {
-      const el = messageRefs.current[message._id];
-      if (el) {
-        console.log(`Observing unread message: ${message._id}`);
-        observer.observe(el);
-      }
-    });
+          });
+        },
+        { threshold: 0.5 } // Consider message visible when 50% in view
+      );
+      
+      // Observe all unread messages sent to the current user
+      const messagesToObserve = messages.filter(message => 
+        message.recipient === user._id && 
+        !message.readByRecipient &&
+        !visibleMessages.has(message._id) &&
+        !processingMessageIds.has(message._id)
+      );
+      
+      console.log(`Observing ${messagesToObserve.length} unread messages`);
+      
+      messagesToObserve.forEach(message => {
+        const el = messageRefs.current[message._id];
+        if (el && observerRef.current) {
+          console.log(`Observing unread message: ${message._id}`);
+          observerRef.current.observe(el);
+        }
+      });
+    }
     
     // Cleanup function
     return () => {
       console.log('Cleaning up Intersection Observer and timers');
-      observer.disconnect();
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
       Object.values(readTimers.current).forEach(timer => clearTimeout(timer));
       if (batchReadTimerRef.current) clearInterval(batchReadTimerRef.current);
     };
-  }, [messages, user, visibleMessages, processingMessageIds, activeConversation, conversations, isAdmin]);
+  }, [messages, user, activeConversation, isAdmin]);
   
   // Mark all messages in the conversation as read
   const markAllAsRead = async () => {
@@ -768,27 +788,32 @@ const SharedMessaging: React.FC<SharedMessagingProps> = ({ isAdmin }) => {
               </div>
             )}
             
-            {/* Messages area */}
-            <div className={`flex-1 flex flex-col ${isAdmin && !activeConversation ? 'items-center justify-center' : ''}`}>
-              {/* Header - shows user name in admin mode */}
-              {(isAdmin && activeConversation) || !isAdmin ? (
-                <div className="p-4 border-b border-navy-700 flex items-center justify-between">
-                  <div className="flex items-center">
-                    {isAdmin && (
-                      <button
-                        onClick={() => setActiveConversation(null)}
-                        className="lg:hidden mr-3 p-1 rounded-lg hover:bg-navy-700"
-                      >
-                        <ArrowLeft className="h-4 w-4 text-navy-300" />
-                      </button>
-                    )}
-                    <h2 className="text-xl font-semibold text-white">
-                      {isAdmin 
-                        ? getUserNameById(activeConversation!) 
-                        : 'Message Admin'}
+            {/* Main message area */}
+            <div className={`flex-1 flex flex-col ${!isAdmin ? 'border-t border-navy-700 md:border-t-0' : ''}`}>
+              {/* Message header */}
+              <div className="p-4 border-b border-navy-700 bg-navy-850 flex justify-between items-center">
+                <div className="flex items-center">
+                  {isAdmin && (
+                    <button
+                      onClick={() => setActiveConversation(null)}
+                      className="lg:hidden mr-3 p-1 rounded-lg hover:bg-navy-700"
+                    >
+                      <ArrowLeft className="h-4 w-4 text-navy-300" />
+                    </button>
+                  )}
+                  {isAdmin && activeConversation ? (
+                    <h2 className="text-lg font-semibold text-white">
+                      {getUserNameById(activeConversation)}
                     </h2>
-                  </div>
-                  
+                  ) : (
+                    <h2 className="text-lg font-semibold text-white">
+                      {isAdmin ? 'Select a conversation' : 'Admin Support'}
+                    </h2>
+                  )}
+                </div>
+                
+                <div className="flex items-center space-x-4">
+                  {/* Mark all as read */}
                   {messages.length > 0 && (
                     <button
                       onClick={markAllAsRead}
@@ -798,22 +823,20 @@ const SharedMessaging: React.FC<SharedMessagingProps> = ({ isAdmin }) => {
                     </button>
                   )}
                 </div>
-              ) : null}
+              </div>
               
+              {/* Display message to select a conversation in admin mode when no active conversation */}
               {isAdmin && !activeConversation ? (
-                <div className="text-center p-6">
+                <div className="flex-1 flex items-center justify-center">
                   <p className="text-lg text-navy-300">Select a conversation to view messages</p>
                 </div>
               ) : (
                 <>
-                  {/* Messages container with proper scrollbar */}
-                  <div 
-                    id={isAdmin ? "admin-messages-container" : "user-messages-container"}
+                  {/* Messages container */}
+                  <div
                     ref={messagesContainerRef}
-                    className="flex-1 overflow-y-auto p-4"
+                    className="flex-1 p-4 overflow-y-auto bg-navy-850/30"
                     style={{ 
-                      height: 'calc(100vh - 16rem)', 
-                      overflowY: 'auto',
                       overscrollBehavior: 'contain'
                     }}
                   >
@@ -861,11 +884,12 @@ const SharedMessaging: React.FC<SharedMessagingProps> = ({ isAdmin }) => {
                         );
                       })
                     )}
+                    
                     <div ref={messagesEndRef} />
                   </div>
-                  
-                  {/* Message input */}
-                  <div className="p-4 border-t border-navy-700">
+                
+                  {/* New message input */}
+                  <div className="p-4 border-t border-navy-700 bg-navy-850">
                     <form onSubmit={sendMessage} className="flex">
                       <input
                         type="text"

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import axios from 'axios';
 
 const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -30,14 +31,17 @@ const ForgotPassword: React.FC = () => {
     setError(null);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Call the real API endpoint
+      const response = await axios.post('/api/auth/forgot-password', { email });
       
-      // Always succeed in demo mode
-      setSuccess(true);
+      if (response.data.success) {
+        setSuccess(true);
+      } else {
+        setError(response.data.message || 'Failed to send reset email');
+      }
     } catch (err: any) {
       console.error('Error requesting password reset:', err);
-      setError(err.message || 'Failed to send reset email');
+      setError(err.response?.data?.message || err.message || 'Failed to send reset email');
     } finally {
       setLoading(false);
     }
@@ -126,11 +130,6 @@ const ForgotPassword: React.FC = () => {
                       'Send Reset Link'
                     )}
                   </button>
-                </div>
-                
-                <div className="mt-4 p-3 bg-navy-700/50 rounded-md text-xs text-navy-300">
-                  <p className="font-medium">Demo mode:</p>
-                  <p>In this demo version, the reset feature will always succeed but no actual email will be sent.</p>
                 </div>
               </form>
               
