@@ -40,6 +40,7 @@ interface StripePaymentProps {
   packageId: string;
   packageName: string;
   packagePrice: number;
+  currency?: string;
   onPaymentSuccess: (paymentId: string) => void;
   onPaymentError: (error: string) => void;
   onCancel: () => void;
@@ -72,6 +73,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   packageId,
   packageName,
   packagePrice,
+  currency: propCurrency,
   onPaymentSuccess,
   onPaymentError,
   onCancel
@@ -79,7 +81,10 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   const stripe = useStripe();
   const elements = useElements();
   const navigate = useNavigate();
-  const { currency } = useCurrency();
+  const { currency: contextCurrency } = useCurrency();
+  
+  // Use the currency from props if provided, otherwise use the one from context
+  const currency = propCurrency || contextCurrency.code;
   
   const [loading, setLoading] = useState(false);
   const [clientSecret, setClientSecret] = useState<string>('');
@@ -133,7 +138,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   };
   
   // Format price as currency
-  const formattedPrice = formatCurrency(packagePrice, currency.code);
+  const formattedPrice = formatCurrency(packagePrice, currency);
   
   // Fetch user's saved payment methods on component mount
   useEffect(() => {
@@ -219,7 +224,8 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         { 
           packageId,
           countryCode: billingDetails.address.country,
-          useExistingPaymentMethod: methods.length > 0
+          useExistingPaymentMethod: methods.length > 0,
+          currency
         },
         {
           headers: {

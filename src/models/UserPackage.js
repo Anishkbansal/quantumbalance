@@ -39,6 +39,11 @@ const UserPackageSchema = new Schema({
     type: Number,
     required: true
   },
+  currency: {
+    type: String,
+    enum: ['GBP', 'USD', 'EUR', 'CAD', 'AUD', 'JPY', 'INR'],
+    default: 'GBP'
+  },
   // Payment information
   paymentMethod: {
     type: String,

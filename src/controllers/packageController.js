@@ -56,7 +56,7 @@ const getPackageById = async (req, res) => {
 // Purchase a package
 const purchasePackage = async (req, res) => {
   try {
-    const { packageId, paymentMethod, paymentId } = req.body;
+    const { packageId, paymentMethod, paymentId, currency } = req.body;
     const userId = req.user._id;
     
     // Add warning and validation for Stripe payments
@@ -112,6 +112,14 @@ const purchasePackage = async (req, res) => {
     // Map payment method to valid enum value
     const validPaymentMethod = paymentMethod === 'stripe' ? 'credit_card' : (paymentMethod || 'credit_card');
     
+    // If currency is provided, update user's preferred currency
+    if (currency) {
+      const validCurrencies = ['GBP', 'USD', 'EUR', 'CAD', 'AUD', 'JPY', 'INR'];
+      if (validCurrencies.includes(currency)) {
+        user.preferredCurrency = currency;
+      }
+    }
+    
     // Create a new user package
     const userPackage = new UserPackage({
       user: userId,
@@ -119,6 +127,7 @@ const purchasePackage = async (req, res) => {
       packageType: package_.type,
       expiryDate,
       price: package_.price,
+      currency: currency || 'GBP', // Store the currency used for the purchase
       paymentMethod: validPaymentMethod,
       paymentId: paymentId || `demo_${Date.now()}`,
       stripePaymentIntentId: paymentMethod === 'stripe' ? paymentId : null,

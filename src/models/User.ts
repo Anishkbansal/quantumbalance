@@ -42,6 +42,7 @@ interface IUser extends mongoose.Document {
     phone?: string;
   };
   packageType: PackageType;
+  preferredCurrency?: string;
   healthQuestionnaire: HealthQuestionnaireData | null;
   joiningDate: Date;
   isVerified: boolean;
@@ -95,6 +96,11 @@ const UserSchema: Schema = new Schema({
     type: String,
     enum: ['none', 'single', 'basic', 'enhanced', 'premium'],
     default: 'none',
+  },
+  preferredCurrency: {
+    type: String,
+    enum: ['GBP', 'USD', 'EUR', 'CAD', 'AUD', 'JPY', 'INR'],
+    default: 'GBP',
   },
   healthQuestionnaire: {
     isPregnant: {

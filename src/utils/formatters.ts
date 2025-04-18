@@ -187,6 +187,32 @@ export function formatCurrency(
 }
 
 /**
+ * Convert an amount from one currency to another
+ * @param amount - The amount to convert
+ * @param fromCurrency - The source currency code (default: GBP)
+ * @param toCurrency - The target currency code
+ * @param exchangeRates - The exchange rates object
+ * @returns Converted amount
+ */
+export function convertCurrency(
+  amount: number,
+  fromCurrency: string = 'GBP',
+  toCurrency: string,
+  exchangeRates: Record<string, number>
+): number {
+  // If currencies are the same, no conversion needed
+  if (fromCurrency === toCurrency) {
+    return Math.round(amount);
+  }
+
+  // Convert from source currency to target currency
+  const convertedAmount = (amount * exchangeRates[toCurrency]) / exchangeRates[fromCurrency];
+  
+  // Round to nearest whole number for all currencies
+  return Math.round(convertedAmount);
+}
+
+/**
  * Get default currency based on user's browser locale
  * @returns The currency code (default: USD)
  */
@@ -210,7 +236,9 @@ export function getDefaultCurrency(): string {
     'ja': 'JPY',
     'ja-JP': 'JPY',
     'zh': 'CNY',
-    'zh-CN': 'CNY'
+    'zh-CN': 'CNY',
+    'hi': 'INR',
+    'hi-IN': 'INR'
   };
   
   // Try to get the user's locale from the browser

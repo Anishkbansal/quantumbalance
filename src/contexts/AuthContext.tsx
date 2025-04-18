@@ -20,6 +20,7 @@ interface User {
   };
   profilePicture?: string | null;
   packageType: string;
+  preferredCurrency?: string;
   isAdmin: boolean;
   isVerified: boolean;
   activePackage?: {

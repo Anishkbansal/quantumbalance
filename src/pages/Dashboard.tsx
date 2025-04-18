@@ -20,6 +20,7 @@ interface User {
   name: string;
   email: string;
   packageType: string;
+  preferredCurrency?: string;
   activePackage: any | null;
   profile?: {
     avatar?: string;
@@ -160,12 +161,21 @@ const Dashboard = () => {
   // Function to fetch active package
   const fetchActivePackage = useCallback(async () => {
     try {
-      if (!user) return;
+      if (!user) {
+        console.log('No user data available');
+        return;
+      }
       
       const token = localStorage.getItem('token');
-      if (!token) return;
+      if (!token) {
+        console.log('No authentication token found');
+        return;
+      }
       
       setLoading(true);
+      console.log(`Fetching active package for user: ${user._id}`);
+      console.log(`Package type from user object: ${user.packageType}`);
+      
       const response = await fetch(
         `${API_URL}/packages/user/active`,
         {
@@ -177,18 +187,38 @@ const Dashboard = () => {
         }
       );
       
-      const data: ActivePackageResponse = await response.json();
+      // Log the raw response status
+      console.log(`Active package API response status: ${response.status}`);
+      
+      // Clone the response so we can log it and still parse it
+      const responseClone = response.clone();
+      const rawText = await responseClone.text();
+      console.log('Active package API raw response:', rawText);
+      
+      // Parse as JSON if possible
+      let data: ActivePackageResponse;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseError) {
+        console.error('Error parsing active package response:', parseError);
+        setActivePackage(null);
+        setPackageTimeRemaining(null);
+        setMessage("Error loading package data. Please try refreshing.");
+        return;
+      }
       
       if (data.success && data.packageInfo) {
+        console.log('Active package found:', data.packageInfo);
         setActivePackage(data.packageInfo);
         setPackageTimeRemaining(data.timeRemaining || null);
       } else {
-        console.log('No active package or package expired:', data.message);
+        console.warn('No active package or package expired:', data.message);
         setActivePackage(null);
         setPackageTimeRemaining(null);
         
         // If user previously had a package but now doesn't, update user state
         if (user.packageType !== 'none') {
+          console.log(`User package type (${user.packageType}) doesn't match API response, updating...`);
           updateUser({
             ...user,
             packageType: 'none'
@@ -199,6 +229,7 @@ const Dashboard = () => {
       console.error('Error fetching active package:', error);
       setActivePackage(null);
       setPackageTimeRemaining(null);
+      setMessage("Error connecting to server. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -207,12 +238,31 @@ const Dashboard = () => {
   // Function to fetch prescriptions
   const fetchPrescriptions = useCallback(async () => {
     try {
-      if (!user) return;
+      if (!user) {
+        console.log('No user data available for prescriptions');
+        return;
+      }
       
       const token = localStorage.getItem('token');
-      if (!token) return;
+      if (!token) {
+        console.log('No authentication token found for prescriptions');
+        return;
+      }
+      
+      // Check if token might be expired or malformed
+      try {
+        // Simple check if token is JWT format (not foolproof but catches obvious issues)
+        const tokenParts = token.split('.');
+        if (tokenParts.length !== 3) {
+          console.warn('Token does not appear to be in valid JWT format');
+        }
+      } catch (tokenError) {
+        console.error('Error examining token:', tokenError);
+      }
       
       setLoading(true);
+      console.log(`Fetching prescriptions for user: ${user._id}`);
+      
       const response = await fetch(
         `${API_URL}/prescription/active`,
         {
@@ -224,9 +274,27 @@ const Dashboard = () => {
         }
       );
       
-      const data = await response.json();
+      // Log the raw response status
+      console.log(`Prescriptions API response status: ${response.status}`);
+      
+      // Clone the response so we can log it and still parse it
+      const responseClone = response.clone();
+      const rawText = await responseClone.text();
+      console.log('Prescriptions API raw response:', rawText);
+      
+      // Parse as JSON if possible
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseError) {
+        console.error('Error parsing prescriptions response:', parseError);
+        setGroupedPrescriptions([]);
+        setMessage("Error loading prescription data. Please try refreshing.");
+        return;
+      }
       
       if (data.success && data.prescription) {
+        console.log('Active prescription found:', data.prescription);
         // Group frequencies by condition
         if (data.prescription.frequencies && data.prescription.frequencies.length > 0) {
           const groupedByCondition: {[key: string]: PrescriptionFrequency[]} = {};
@@ -246,6 +314,7 @@ const Dashboard = () => {
             frequencies
           }));
           
+          console.log('Grouped prescriptions:', groupedResult);
           setGroupedPrescriptions(groupedResult);
           
           // Initialize all conditions as expanded
@@ -255,15 +324,17 @@ const Dashboard = () => {
           });
           setExpandedConditions(initialExpandState);
         } else {
+          console.log('No frequencies found in prescription');
           setGroupedPrescriptions([]);
         }
       } else {
-        console.log('No active prescription found:', data.message);
+        console.warn('No active prescription found:', data.message);
         setGroupedPrescriptions([]);
       }
     } catch (error) {
       console.error('Error fetching prescriptions:', error);
       setGroupedPrescriptions([]);
+      setMessage("Error loading prescriptions. Please check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -899,12 +970,148 @@ const Dashboard = () => {
     fetchMissingAudioDetails();
   }, [groupedPrescriptions, audioDetails]);
 
+  // Add a useEffect to check token validity on component mount
+  useEffect(() => {
+    const checkTokenValidity = () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.warn('No token found in localStorage');
+        return;
+      }
+      
+      try {
+        // Simple JWT structure validation (not secure, just checking format)
+        const parts = token.split('.');
+        if (parts.length !== 3) {
+          console.warn('Token does not have valid JWT structure');
+          return;
+        }
+        
+        // Try to decode the payload part (middle section) to check expiration
+        const payload = JSON.parse(atob(parts[1]));
+        
+        // Check for expiration if exp claim exists
+        if (payload.exp) {
+          const expTimestamp = payload.exp * 1000; // Convert to milliseconds
+          const currentTime = Date.now();
+          
+          if (currentTime > expTimestamp) {
+            console.error('Token appears to be expired:', {
+              expiry: new Date(expTimestamp).toISOString(),
+              current: new Date(currentTime).toISOString(),
+              difference: Math.floor((currentTime - expTimestamp) / 1000 / 60) + ' minutes'
+            });
+            
+            setMessage("Your session has expired. Please log in again.");
+            // Could redirect to login page here if needed
+          } else {
+            console.log('Token expiration check passed, expires in:', 
+              Math.floor((expTimestamp - currentTime) / 1000 / 60) + ' minutes');
+          }
+        } else {
+          console.log('Token does not contain expiration information');
+        }
+      } catch (error) {
+        console.error('Error validating token:', error);
+      }
+    };
+    
+    checkTokenValidity();
+  }, []);
+
+  // Add this utility function for troubleshooting
+  const refreshUserAndData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setMessage("Refreshing your account data...");
+      
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setMessage("No authentication token found. Please log in again.");
+        navigate('/login');
+        return;
+      }
+      
+      // Fetch fresh user data
+      const response = await fetch(
+        `${API_URL}/users/me`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Error fetching user data: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.user) {
+        // Update user in context
+        updateUser(data.user);
+        
+        // Refetch package and prescriptions
+        await fetchActivePackage();
+        await fetchPrescriptions();
+        
+        setMessage("Account data refreshed successfully!");
+      } else {
+        setMessage("Error refreshing user data. Please try logging in again.");
+      }
+    } catch (error) {
+      console.error('Error refreshing user data:', error);
+      setMessage(`Error: ${error instanceof Error ? error.message : 'Failed to refresh data'}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [navigate, updateUser, fetchActivePackage, fetchPrescriptions]);
+
   // Render the prescriptions section
   const renderPrescriptionsSection = () => {
+    console.log("Rendering prescriptions section with activePackage:", activePackage);
+    console.log("User package info from context:", user?.packageType);
+    
     if (!activePackage) {
       return (
-        <div className="text-center py-8">
-          <p className="text-navy-300">Please purchase a package to access prescriptions.</p>
+        <div className="flex flex-col items-center py-8">
+          <p className="text-navy-300 mb-4">Please purchase a package to access prescriptions.</p>
+          
+          {/* Debug information */}
+          <div className="mt-4 p-4 bg-navy-750 rounded border border-navy-600 max-w-lg w-full">
+            <h4 className="text-gold-500 font-semibold mb-2">Diagnostic Information</h4>
+            <div className="text-xs text-navy-300 space-y-1">
+              <p>User ID: {user?._id || 'Not available'}</p>
+              <p>Package Type (user object): {user?.packageType || 'none'}</p>
+              <p>Auth Token Present: {localStorage.getItem('token') ? 'Yes' : 'No'}</p>
+              <p>API URL: {API_URL}/packages/user/active</p>
+              <div className="flex space-x-2 mt-2">
+                <button 
+                  onClick={fetchActivePackage}
+                  className="px-3 py-1 text-xs bg-navy-700 hover:bg-navy-600 rounded text-gold-500"
+                >
+                  Retry Package Check
+                </button>
+                <button 
+                  onClick={refreshUserAndData}
+                  className="px-3 py-1 text-xs bg-gold-500 hover:bg-gold-400 rounded text-navy-900"
+                >
+                  Refresh Account Data
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <button
+            onClick={() => navigate('/packages')}
+            className="mt-6 px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 rounded-lg transition flex items-center"
+          >
+            <Package className="w-4 h-4 mr-2" />
+            <span>View Available Packages</span>
+          </button>
         </div>
       );
     }
@@ -1105,6 +1312,32 @@ const Dashboard = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* If no prescriptions are found despite having an active package */}
+        {groupedPrescriptions.length === 0 && (
+          <div className="text-center py-8 border border-navy-700 rounded-lg bg-navy-800 mb-8">
+            <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-white mb-2">No Prescriptions Found</h3>
+            <p className="text-navy-300 max-w-md mx-auto mb-4">
+              You have an active package but no prescriptions have been generated. This could be a temporary system issue.
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center gap-3">
+              <button
+                onClick={refreshUserAndData}
+                className="px-4 py-2 bg-gold-500 hover:bg-gold-400 text-navy-900 rounded-lg transition flex items-center justify-center"
+              >
+                <span>Refresh Account Data</span>
+              </button>
+              <button
+                onClick={() => generatePrescription()}
+                className="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-white rounded-lg transition flex items-center justify-center"
+              >
+                <Volume2 className="w-4 h-4 mr-2" />
+                <span>Generate Prescription</span>
+              </button>
+            </div>
           </div>
         )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, Loader2, Gift, Check, RefreshCw, Clock, ArrowRight, CreditCard, X } from 'lucide-react';
+import { AlertCircle, Loader2, Gift, Check, RefreshCw, Clock, ArrowRight, CreditCard, X, Globe } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -54,7 +54,7 @@ export default function Packages() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, refreshUserData } = useAuth();
-  const { currency } = useCurrency();
+  const { currency, setCurrency, availableCurrencies, convertPrice } = useCurrency();
   
   const [giftCode, setGiftCode] = useState('');
   const [isRedeeming, setIsRedeeming] = useState(false);
@@ -82,7 +82,14 @@ export default function Packages() {
   
   // Format amount using the user's preferred currency
   const formatAmount = (amount: number) => {
-    return formatCurrency(amount, currency.code);
+    // Convert the amount from GBP to the current currency and format it
+    const convertedAmount = convertPrice(amount);
+    return formatCurrency(convertedAmount, currency.code);
+  };
+  
+  // Handle currency change
+  const handleCurrencyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCurrency(e.target.value);
   };
   
   // Using useCallback to memoize these functions to avoid dependency issues
@@ -310,7 +317,8 @@ export default function Packages() {
         packageId: packageData._id,
         packageType: packageData.type,
         packageName: packageData.name,
-        packagePrice: packageData.price
+        packagePrice: packageData.price,
+        currency: currency.code
       }
     });
   };
@@ -470,6 +478,28 @@ export default function Packages() {
             </div>
           </div>
         )}
+
+        {/* Currency selector - moved to above the packages grid */}
+        <div className="mb-6 flex justify-end">
+          <div className="flex items-center bg-navy-700 border border-navy-600 rounded-lg p-2">
+            <Globe className="h-5 w-5 text-navy-300 mr-2" />
+            <select
+              value={currency.code}
+              onChange={handleCurrencyChange}
+              className="bg-transparent text-white focus:outline-none cursor-pointer"
+            >
+              {availableCurrencies.map(curr => (
+                <option 
+                  key={curr.code} 
+                  value={curr.code}
+                  className="bg-navy-700 text-white"
+                >
+                  {curr.code} - {curr.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         
         {loading ? (
           <div className="flex justify-center my-16">

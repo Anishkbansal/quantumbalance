@@ -61,6 +61,11 @@ const UserSchema = new Schema({
     enum: ['none', 'single', 'basic', 'enhanced', 'premium'],
     default: 'none',
   },
+  preferredCurrency: {
+    type: String,
+    enum: ['GBP', 'USD', 'EUR', 'CAD', 'AUD', 'JPY', 'INR'],
+    default: 'GBP',
+  },
   activePackageId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'UserPackage',

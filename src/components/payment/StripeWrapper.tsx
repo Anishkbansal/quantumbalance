@@ -27,6 +27,7 @@ interface StripeWrapperProps {
   packageId: string;
   packageName: string;
   packagePrice: number;
+  currency?: string;
   onPaymentSuccess: (paymentId: string) => void;
   onPaymentError: (error: string) => void;
   onCancel: () => void;

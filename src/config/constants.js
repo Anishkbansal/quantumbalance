@@ -19,7 +19,19 @@ export const AVAILABLE_CURRENCIES = [
   { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
   { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
   { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
+  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
 ];
 
 // Default currency (can be overridden by user preferences or auto-detection)
 export const DEFAULT_CURRENCY = 'GBP'; 
+
+// Exchange rates with GBP as base currency
+export const EXCHANGE_RATES = {
+  GBP: 1.0,
+  USD: 1.29,
+  EUR: 1.18,
+  CAD: 1.75,
+  AUD: 1.93,
+  JPY: 191.53,
+  INR: 107.8, // 1 GBP = 107.8 INR
+}; 

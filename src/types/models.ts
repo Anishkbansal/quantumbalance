@@ -8,6 +8,7 @@ export interface User {
   email: string;
   username: string;
   packageType: string;
+  preferredCurrency?: string;
   activePackageId?: string;
   phone?: string;
   profilePicture?: string;
