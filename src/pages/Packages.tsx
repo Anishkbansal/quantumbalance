@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, Loader2, Gift, Check, RefreshCw, Clock, ArrowRight, CreditCard, X, Globe } from 'lucide-react';
+import { AlertCircle, Loader2, Check, RefreshCw, Clock, ArrowRight, CreditCard, X, Globe } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -56,8 +56,6 @@ export default function Packages() {
   const { user, refreshUserData } = useAuth();
   const { currency, setCurrency, availableCurrencies, convertPrice } = useCurrency();
   
-  const [giftCode, setGiftCode] = useState('');
-  const [isRedeeming, setIsRedeeming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -334,63 +332,6 @@ export default function Packages() {
     setSelectedPackage(null);
     setError(null);
   };
-  
-  // Add back the handleRedeemCode function that was accidentally removed
-  const handleRedeemCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!giftCode) {
-      setError('Please enter a redemption code');
-      return;
-    }
-    
-    if (!user) {
-      navigate('/login', { 
-        state: { 
-          from: '/packages',
-          message: 'Please log in to redeem a code'
-        } 
-      });
-      return;
-    }
-    
-    try {
-      setIsRedeeming(true);
-      setError(null);
-      
-      const response = await axios.post(
-        `${API_URL}/packages/redeem`,
-        { code: giftCode },
-        {
-          withCredentials: true,
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        }
-      );
-      
-      if (response.data.success) {
-        setSuccess('Gift code redeemed successfully! Redirecting to dashboard...');
-        
-        // Refresh user data
-        if (typeof refreshUserData === 'function') {
-          await refreshUserData();
-        }
-        
-        // Navigate to dashboard after successful redemption
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 2000);
-      } else {
-        throw new Error(response.data.message || 'Failed to redeem gift code');
-      }
-    } catch (error: any) {
-      console.error('Error redeeming code:', error);
-      setError(error.response?.data?.message || error.message);
-    } finally {
-      setIsRedeeming(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-navy-900 to-navy-800 text-white py-8">
@@ -462,7 +403,7 @@ export default function Packages() {
         {/* Current package info banner */}
         {user?.packageType && user.packageType !== 'none' && (
           <div className="mb-8 p-4 bg-indigo-900/30 border border-indigo-700 rounded-lg text-indigo-300 flex items-start max-w-xl mx-auto">
-            <Gift className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+            <Check className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
             <div>
               <p>
                 You currently have the <span className="font-semibold text-white">
@@ -515,7 +456,7 @@ export default function Packages() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
               {packages.map((plan) => (
                 <div 
                   key={plan._id}
@@ -561,37 +502,6 @@ export default function Packages() {
                   </button>
                 </div>
               ))}
-            </div>
-            
-            <div className="max-w-md mx-auto bg-navy-800 rounded-lg p-6 border border-navy-700">
-              <h3 className="text-xl font-bold text-white mb-4">Have a Gift Code?</h3>
-              <form onSubmit={handleRedeemCode}>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      value={giftCode}
-                      onChange={(e) => setGiftCode(e.target.value)}
-                      placeholder="Enter gift code"
-                      className="w-full px-4 py-2 bg-navy-700 border border-navy-600 rounded-lg text-white focus:border-gold-500 focus:outline-none"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isRedeeming}
-                    className="px-4 py-2 bg-gold-500 text-navy-900 font-medium rounded-lg hover:bg-gold-400 transition-colors disabled:opacity-50"
-                  >
-                    {isRedeeming ? (
-                      <div className="flex items-center">
-                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                        <span>Redeeming...</span>
-                      </div>
-                    ) : (
-                      'Redeem'
-                    )}
-                  </button>
-                </div>
-              </form>
             </div>
           </>
         )}

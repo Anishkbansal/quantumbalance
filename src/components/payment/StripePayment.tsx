@@ -96,6 +96,9 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | null>(null);
   
+  // New state for manual payment
+  const [isManualPayment, setIsManualPayment] = useState(false);
+  
   // Current selected country
   const [selectedCountry, setSelectedCountry] = useState<CountryData | null>(null);
   
@@ -212,7 +215,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
   
-  // Create a payment intent
+  // Update createPaymentIntent to support manual payment
   const createPaymentIntent = async (methods: PaymentMethod[]) => {
     try {
       setLoading(true);
@@ -224,7 +227,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         { 
           packageId,
           countryCode: billingDetails.address.country,
-          useExistingPaymentMethod: methods.length > 0,
+          useExistingPaymentMethod: methods.length > 0 && !isManualPayment,
           currency
         },
         {
@@ -274,7 +277,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
   
-  // Handle payment submission
+  // Update handlePaymentSubmit to handle manual payment
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -282,116 +285,428 @@ const StripePayment: React.FC<StripePaymentProps> = ({
       return;
     }
     
-    if (!selectedPaymentMethodId) {
-      setError('Please select a payment method');
+    if (!isManualPayment && !selectedPaymentMethodId) {
+      setError('Please select a payment method or enter new card details.');
       return;
     }
     
-    // Show confirmation dialog
     setShowConfirmDialog(true);
   };
   
-  // Process payment after confirmation
+  // Update processPayment to handle manual payment
   const processPayment = async () => {
+    if (!stripe || !clientSecret) {
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
     try {
-      setShowConfirmDialog(false);
-      setLoading(true);
-      setError(null);
+      let result;
       
-      // Check if stripe is available
-      if (!stripe || !clientSecret) {
-        throw new Error('Stripe is not initialized');
+      if (isManualPayment) {
+        // For manual payment with new card
+        const cardElement = elements?.getElement(CardElement);
+        
+        if (!cardElement) {
+          throw new Error('Card element not found');
+        }
+        
+        // Process with entered card
+        result = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: {
+            card: cardElement,
+            billing_details: {
+              name: billingDetails.name,
+              email: billingDetails.email,
+              phone: billingDetails.phone,
+              address: {
+                line1: billingDetails.address.line1,
+                line2: billingDetails.address.line2,
+                city: billingDetails.address.city,
+                state: billingDetails.address.state,
+                postal_code: billingDetails.address.postal_code,
+                country: billingDetails.address.country,
+              }
+            }
+          }
+        });
+      } else {
+        // For saved payment method
+        result = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: selectedPaymentMethodId as string
+        });
       }
-      
-      // Check if payment method is selected
-      if (!selectedPaymentMethodId) {
-        throw new Error('Please select a payment method');
-      }
-      
-      // If we don't have a payment intent yet, create one
-      if (!paymentIntentId) {
-        await createPaymentIntent(paymentMethods);
-      }
-      
-      // Show clear message to user that payment is being processed
-      toast.loading('Processing your payment...', { id: 'payment-processing' });
-      
-      // Confirm the payment with Stripe using the saved payment method
-      const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: selectedPaymentMethodId
-      });
-      
-      // Clear the loading toast
-      toast.dismiss('payment-processing');
       
       if (result.error) {
-        // Handle specific error cases with user-friendly messages
-        let errorMessage = result.error.message || 'Payment failed';
-        
-        // Check for common error types and provide clearer messages
-        if (result.error.type === 'card_error') {
-          if (result.error.code === 'card_declined') {
-            errorMessage = 'Your card was declined. Please try another payment method.';
-          } else if (result.error.code === 'expired_card') {
-            errorMessage = 'Your card has expired. Please try another card.';
-          } else if (result.error.code === 'processing_error') {
-            errorMessage = 'There was an error processing your card. Please try again later.';
-          }
-        } else if (result.error.type === 'validation_error') {
-          errorMessage = 'There was a problem with your payment information. Please check and try again.';
-        }
-        
-        toast.error(errorMessage);
-        throw new Error(errorMessage);
-      } else if (result.paymentIntent) {
-        // Check the specific status of the payment
-        switch (result.paymentIntent.status) {
-          case 'succeeded':
-            toast.success('Payment successful!');
-            // Payment succeeded, call success callback
-            onPaymentSuccess(result.paymentIntent.id);
-            break;
-            
-          case 'processing':
-            toast.error('Your payment is still processing. We\'ll update you when it\'s confirmed.');
-            setError('Your payment is processing. Please wait a moment and refresh the page to check the status.');
-            break;
-            
-          case 'requires_payment_method':
-            toast.error('Your payment was not successful. Please try again with a different payment method.');
-            throw new Error('Payment failed. Please try another payment method.');
-            
-          default:
-            toast.error('Something went wrong with your payment.');
-            throw new Error(`Payment status: ${result.paymentIntent.status}. Please try again.`);
-        }
+        throw new Error(result.error.message || 'Payment failed');
       } else {
-        toast.error('Payment not completed');
-        throw new Error('Payment not completed');
+        if (result.paymentIntent.status === 'succeeded') {
+          // Payment succeeded
+          toast.success('Payment successful!');
+          onPaymentSuccess(result.paymentIntent.id);
+        } else {
+          // Payment requires additional action
+          toast.error('Payment requires additional verification. Please try again.');
+        }
       }
     } catch (err: any) {
       console.error('Payment error:', err);
-      
-      // Show a toast error
-      toast.error(err.message || 'Error processing payment');
-      
-      setError(err.message || 'Error processing payment');
-      onPaymentError(err.message || 'Error processing payment');
+      setError(err.message || 'Payment failed. Please try again.');
+      onPaymentError(err.message || 'Payment failed');
     } finally {
       setLoading(false);
+      setShowConfirmDialog(false);
     }
   };
-  
+
+  // Handle billing details input changes
+  const handleBillingInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    
+    if (name.startsWith('address.')) {
+      const addressField = name.split('.')[1];
+      setBillingDetails(prev => ({
+        ...prev,
+        address: {
+          ...prev.address,
+          [addressField]: value
+        }
+      }));
+    } else {
+      setBillingDetails(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  // Toggle between saved payment methods and manual payment
+  const togglePaymentMode = () => {
+    setIsManualPayment(prev => !prev);
+    if (!isManualPayment) {
+      setSelectedPaymentMethodId(null);
+    }
+  };
+
   return (
-    <div className="bg-navy-800/95 backdrop-filter backdrop-blur-sm rounded-lg p-6 w-full max-w-md mx-auto max-h-[90vh] overflow-y-auto shadow-xl border border-navy-700/50 relative">
-      {/* Full screen loading overlay */}
-      {loading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-navy-900/80 backdrop-blur-sm z-50 rounded-lg">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-gold-500 mb-4"></div>
-          <p className="text-white text-lg font-medium">Processing payment...</p>
-          <p className="text-navy-300 text-sm mt-2">Please do not close this window</p>
+    <div className="bg-navy-800 border border-navy-700 rounded-xl shadow-lg overflow-hidden">
+      <div className="p-4 md:p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-white">Checkout: {packageName}</h3>
+          <div className="text-xl font-bold text-gold-400">{formattedPrice}</div>
         </div>
-      )}
+        
+        {/* Error Display */}
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-3 bg-red-900/30 border border-red-900 rounded-lg text-red-200 text-sm flex items-start"
+          >
+            <div className="flex items-start">
+              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+              <div>{error}</div>
+            </div>
+          </motion.div>
+        )}
+        
+        <form onSubmit={handlePaymentSubmit} className="space-y-5">
+          {/* Payment Method Toggle */}
+          <div className="bg-navy-700/30 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4 border-b border-navy-600 pb-2">
+              <h4 className="text-white text-sm font-medium">Payment Method</h4>
+              {paymentMethods.length > 0 && (
+                <button
+                  type="button"
+                  onClick={togglePaymentMode}
+                  className="text-sm text-gold-400 hover:text-gold-300 transition-colors"
+                >
+                  {isManualPayment ? 'Use Saved Method' : 'Enter Card Details'}
+                </button>
+              )}
+            </div>
+            
+            {loadingPaymentMethods ? (
+              <div className="flex justify-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gold-500"></div>
+              </div>
+            ) : !isManualPayment ? (
+              /* Saved Payment Methods Section */
+              paymentMethods.length === 0 ? (
+                <div className="text-center py-6 bg-navy-800/50 rounded-lg">
+                  <CreditCard size={36} className="mx-auto mb-3 text-navy-500" />
+                  <h3 className="text-base font-medium text-navy-300 mb-2">No Payment Methods Found</h3>
+                  <p className="text-navy-400 text-sm mb-4 max-w-xs mx-auto">
+                    You need to add a payment method or enter your card details below.
+                  </p>
+                  <Button 
+                    onClick={() => setIsManualPayment(true)}
+                    variant="primary"
+                  >
+                    Enter Card Details
+                    <ArrowRight size={16} className="ml-1" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {paymentMethods.map((method) => (
+                    <motion.div
+                      key={method.id}
+                      variants={cardVariants}
+                      className={`bg-navy-700/80 rounded-lg p-3 flex justify-between items-center cursor-pointer ${
+                        selectedPaymentMethodId === method.id 
+                          ? 'border-2 border-gold-500/70' 
+                          : 'border border-navy-600 hover:border-gold-500/30'
+                      }`}
+                      onClick={() => setSelectedPaymentMethodId(method.id)}
+                      whileHover={{ scale: 1.01 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <div className="flex items-center">
+                        <div className={`w-10 h-8 mr-3 flex items-center justify-center rounded-md ${
+                          method.isDefault ? 'bg-gold-500/10' : 'bg-navy-600'
+                        }`}>
+                          <CreditCard size={20} className={method.isDefault ? 'text-gold-500' : 'text-white'} />
+                        </div>
+                        
+                        <div>
+                          <div className="text-white text-sm font-medium flex items-center">
+                            {formatCardBrand(method.brand)} •••• {method.last4}
+                            {method.isDefault && (
+                              <span className="ml-2 text-xs py-0.5 px-2 bg-gold-500/20 text-gold-400 rounded-full flex items-center">
+                                <CheckCircle size={10} className="mr-1" />
+                                Default
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-navy-400 text-xs">
+                            Expires {method.expMonth}/{method.expYear}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {selectedPaymentMethodId === method.id && (
+                        <div className="w-5 h-5 rounded-full bg-gold-500 flex items-center justify-center">
+                          <CheckCircle size={14} className="text-navy-900" />
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              )
+            ) : (
+              /* Manual Payment Form */
+              <div className="space-y-5">
+                <div className="p-3 bg-navy-800/70 rounded-lg border border-navy-600">
+                  <div className="mb-4">
+                    <label htmlFor="card-element" className="block text-sm font-medium text-gray-300 mb-1">
+                      Card Details
+                    </label>
+                    <div className="bg-navy-700 p-3 rounded-md border border-navy-600 focus-within:border-gold-500">
+                      <CardElement 
+                        options={{
+                          style: {
+                            base: {
+                              color: '#fff',
+                              fontFamily: '"Inter", sans-serif',
+                              fontSize: '16px',
+                              '::placeholder': {
+                                color: '#64748b',
+                              },
+                            },
+                            invalid: {
+                              color: '#f87171',
+                            },
+                          },
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing Details Form */}
+                <div className="bg-navy-800/70 rounded-lg border border-navy-600 p-4">
+                  <h4 className="text-white text-sm font-medium mb-4 border-b border-navy-600 pb-2">
+                    Billing Information
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    {/* Personal Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="name" className="block text-gray-300 text-xs mb-1">
+                          Full Name <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id="name"
+                          name="name"
+                          type="text"
+                          value={billingDetails.name}
+                          onChange={handleBillingInputChange}
+                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="email" className="block text-gray-300 text-xs mb-1">
+                          Email <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id="email"
+                          name="email"
+                          type="email"
+                          value={billingDetails.email}
+                          onChange={handleBillingInputChange}
+                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          required
+                        />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label htmlFor="phone" className="block text-gray-300 text-xs mb-1">
+                        Phone Number
+                      </label>
+                      <input
+                        id="phone"
+                        name="phone"
+                        type="tel"
+                        value={billingDetails.phone}
+                        onChange={handleBillingInputChange}
+                        className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                      />
+                    </div>
+                    
+                    {/* Address Information */}
+                    <div>
+                      <label htmlFor="address.line1" className="block text-gray-300 text-xs mb-1">
+                        Address Line 1 <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        id="address.line1"
+                        name="address.line1"
+                        type="text"
+                        value={billingDetails.address.line1}
+                        onChange={handleBillingInputChange}
+                        className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                        required
+                      />
+                    </div>
+                    
+                    <div>
+                      <label htmlFor="address.line2" className="block text-gray-300 text-xs mb-1">
+                        Address Line 2
+                      </label>
+                      <input
+                        id="address.line2"
+                        name="address.line2"
+                        type="text"
+                        value={billingDetails.address.line2 || ''}
+                        onChange={handleBillingInputChange}
+                        className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="address.country" className="block text-gray-300 text-xs mb-1">
+                          Country <span className="text-red-400">*</span>
+                        </label>
+                        <select
+                          id="address.country"
+                          name="address.country"
+                          value={billingDetails.address.country}
+                          onChange={handleBillingInputChange}
+                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          required
+                        >
+                          {COUNTRIES.map(country => (
+                            <option key={country.code} value={country.code}>
+                              {country.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="address.postal_code" className="block text-gray-300 text-xs mb-1">
+                          {selectedCountry?.postalCodeLabel || 'Postal Code'} <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id="address.postal_code"
+                          name="address.postal_code"
+                          type="text"
+                          value={billingDetails.address.postal_code}
+                          onChange={handleBillingInputChange}
+                          placeholder={selectedCountry?.postalCodePlaceholder}
+                          pattern={selectedCountry?.postalCodePattern}
+                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          required
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label htmlFor="address.city" className="block text-gray-300 text-xs mb-1">
+                          City <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id="address.city"
+                          name="address.city"
+                          type="text"
+                          value={billingDetails.address.city}
+                          onChange={handleBillingInputChange}
+                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="address.state" className="block text-gray-300 text-xs mb-1">
+                          State/Province <span className="text-red-400">*</span>
+                        </label>
+                        <input
+                          id="address.state"
+                          name="address.state"
+                          type="text"
+                          value={billingDetails.address.state}
+                          onChange={handleBillingInputChange}
+                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <motion.div 
+            className="flex justify-end mt-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+          >
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 border border-navy-600 hover:border-navy-500 rounded-md text-white mr-3 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!stripe || !clientSecret || (!selectedPaymentMethodId && !isManualPayment)}
+              className="px-6 py-2.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 rounded-md text-navy-900 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              <CreditCard className="w-4 h-4 mr-2" />
+              Pay {formattedPrice}
+            </button>
+          </motion.div>
+        </form>
+      </div>
       
       {/* Confirmation Dialog */}
       <AnimatePresence>
@@ -430,158 +745,46 @@ const StripePayment: React.FC<StripePaymentProps> = ({
                 <div className="flex justify-between">
                   <span className="text-navy-300">Payment Method:</span>
                   <span className="text-white">
-                    {paymentMethods.find(m => m.id === selectedPaymentMethodId)?.brand} •••• 
-                    {paymentMethods.find(m => m.id === selectedPaymentMethodId)?.last4}
+                    {isManualPayment 
+                      ? 'New Card' 
+                      : `${formatCardBrand(paymentMethods.find(m => m.id === selectedPaymentMethodId)?.brand || '')} •••• 
+                      ${paymentMethods.find(m => m.id === selectedPaymentMethodId)?.last4 || ''}`
+                    }
                   </span>
                 </div>
               </div>
               
-              <p className="text-navy-300 mb-5">
-                Are you sure you want to complete this purchase? Your card will be charged {formattedPrice}.
-              </p>
-              
-              <div className="flex space-x-3">
+              <div className="flex space-x-3 justify-end">
                 <button
+                  type="button"
                   onClick={() => setShowConfirmDialog(false)}
-                  className="flex-1 py-2 px-4 bg-navy-700 hover:bg-navy-600 text-white rounded-md transition-colors"
+                  className="px-4 py-2 border border-navy-600 hover:border-navy-500 rounded-md text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={processPayment}
-                  className="flex-1 py-2 px-4 bg-gold-500 hover:bg-gold-400 text-navy-900 font-medium rounded-md transition-colors"
+                  disabled={loading}
+                  className="px-6 py-2.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 rounded-md text-navy-900 font-medium transition-colors flex items-center disabled:opacity-70"
                 >
-                  Confirm Payment
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      Confirm Payment
+                      <ArrowRight size={16} className="ml-1" />
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-      
-      <motion.div 
-        className="mb-6 text-center"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <h3 className="text-xl font-semibold text-white mb-1">Complete Your Purchase</h3>
-        <p className="text-gray-300">
-          {packageName} - {formattedPrice}
-        </p>
-      </motion.div>
-      
-      {error && (
-        <motion.div 
-          className="bg-red-900/40 text-red-300 p-3 rounded-md mb-4 text-sm"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <div className="flex items-start">
-            <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-            <div>{error}</div>
-          </div>
-        </motion.div>
-      )}
-      
-      <form onSubmit={handlePaymentSubmit} className="space-y-5">
-        {/* Payment Methods Section */}
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={containerVariants}
-          className="bg-navy-700/30 rounded-lg p-4 mb-6"
-        >
-          <h4 className="text-white text-sm font-medium mb-4 border-b border-navy-600 pb-2">
-            Select Payment Method
-          </h4>
-          
-          {loadingPaymentMethods ? (
-            <div className="flex justify-center py-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gold-500"></div>
-            </div>
-          ) : paymentMethods.length === 0 ? (
-            <div className="text-center py-6 bg-navy-800/50 rounded-lg">
-              <CreditCard size={36} className="mx-auto mb-3 text-navy-500" />
-              <h3 className="text-base font-medium text-navy-300 mb-2">No Payment Methods Found</h3>
-              <p className="text-navy-400 text-sm mb-4 max-w-xs mx-auto">
-                You need to add a payment method in your profile before making a purchase.
-              </p>
-              <Button 
-                onClick={() => navigate('/profile/payment-methods')}
-                variant="primary"
-                className="flex items-center mx-auto"
-              >
-                Add Payment Method
-                <ArrowRight size={16} className="ml-1" />
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {paymentMethods.map((method) => (
-                <motion.div
-                  key={method.id}
-                  variants={cardVariants}
-                  className={`bg-navy-700/80 rounded-lg p-3 flex justify-between items-center cursor-pointer ${
-                    selectedPaymentMethodId === method.id 
-                      ? 'border-2 border-gold-500/70' 
-                      : 'border border-navy-600 hover:border-gold-500/30'
-                  }`}
-                  onClick={() => setSelectedPaymentMethodId(method.id)}
-                  whileHover={{ scale: 1.01 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <div className="flex items-center">
-                    <div className={`w-10 h-8 mr-3 flex items-center justify-center rounded-md ${
-                      method.isDefault ? 'bg-gold-500/10' : 'bg-navy-600'
-                    }`}>
-                      <CreditCard size={20} className={method.isDefault ? 'text-gold-500' : 'text-white'} />
-                    </div>
-                    
-                    <div>
-                      <div className="text-white text-sm font-medium flex items-center">
-                        {formatCardBrand(method.brand)} •••• {method.last4}
-                        {method.isDefault && (
-                          <span className="ml-2 text-xs py-0.5 px-2 bg-gold-500/20 text-gold-400 rounded-full flex items-center">
-                            <CheckCircle size={10} className="mr-1" />
-                            Default
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-navy-400 text-xs">
-                        Expires {method.expMonth}/{method.expYear}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {selectedPaymentMethodId === method.id && (
-                    <div className="w-5 h-5 rounded-full bg-gold-500 flex items-center justify-center">
-                      <CheckCircle size={14} className="text-navy-900" />
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </motion.div>
-        
-        <motion.div 
-          className="flex justify-end mt-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          <button
-            type="submit"
-            disabled={!stripe || !clientSecret || !selectedPaymentMethodId || paymentMethods.length === 0}
-            className="px-6 py-2.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 rounded-md text-navy-900 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-          >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Pay Now
-          </button>
-        </motion.div>
-      </form>
     </div>
   );
 };
