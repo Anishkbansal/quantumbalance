@@ -44,6 +44,7 @@ interface StripePaymentProps {
   onPaymentSuccess: (paymentId: string) => void;
   onPaymentError: (error: string) => void;
   onCancel: () => void;
+  additionalData?: Record<string, any>;
 }
 
 interface BillingDetails {
@@ -76,7 +77,8 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   currency: propCurrency,
   onPaymentSuccess,
   onPaymentError,
-  onCancel
+  onCancel,
+  additionalData
 }) => {
   const stripe = useStripe();
   const elements = useElements();
@@ -215,21 +217,43 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
   
-  // Update createPaymentIntent to support manual payment
+  // Update createPaymentIntent to support gift card purchases
   const createPaymentIntent = async (methods: PaymentMethod[]) => {
     try {
       setLoading(true);
       setError(null);
       
       const token = localStorage.getItem('token');
+      
+      // Base request payload
+      const requestPayload: any = { 
+        packageId,
+        countryCode: billingDetails.address.country,
+        useExistingPaymentMethod: methods.length > 0 && !isManualPayment,
+        currency
+      };
+      
+      // For gift cards, include additional data
+      if (packageId === 'gift-card') {
+        requestPayload.amount = packagePrice;
+        
+        // Add recipient data from additionalData if available
+        if (additionalData) {
+          if (additionalData.recipientName) {
+            requestPayload.recipientName = additionalData.recipientName;
+          }
+          if (additionalData.recipientEmail) {
+            requestPayload.recipientEmail = additionalData.recipientEmail;
+          }
+          if (additionalData.message) {
+            requestPayload.message = additionalData.message;
+          }
+        }
+      }
+      
       const response = await axios.post(
         `${API_URL}/stripe/create-payment-intent`,
-        { 
-          packageId,
-          countryCode: billingDetails.address.country,
-          useExistingPaymentMethod: methods.length > 0 && !isManualPayment,
-          currency
-        },
+        requestPayload,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -387,6 +411,89 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     setIsManualPayment(prev => !prev);
     if (!isManualPayment) {
       setSelectedPaymentMethodId(null);
+    }
+  };
+
+  // Handle card submission
+  const handleSubmitCard = async () => {
+    if (!stripe || !elements) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Get CardElement
+      const cardElement = elements.getElement(CardElement);
+      
+      if (!cardElement) {
+        throw new Error('Card element not found');
+      }
+      
+      // Confirm payment with Stripe
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: {
+            name: billingDetails.name,
+            email: billingDetails.email,
+            phone: billingDetails.phone,
+            address: {
+              city: billingDetails.address.city,
+              country: billingDetails.address.country,
+              line1: billingDetails.address.line1,
+              line2: billingDetails.address.line2,
+              postal_code: billingDetails.address.postal_code,
+              state: billingDetails.address.state,
+            },
+          },
+        },
+      });
+      
+      if (error) {
+        throw new Error(error.message || 'Payment failed');
+      }
+      
+      if (paymentIntent?.status === 'succeeded') {
+        console.log('Payment successful:', paymentIntent.id);
+        
+        // For gift cards, we'll handle the creation in the parent component
+        if (packageId === 'gift-card') {
+          onPaymentSuccess(paymentIntent.id);
+          return;
+        }
+        
+        // For packages, call the API to confirm and provision
+        const token = localStorage.getItem('token');
+        const response = await axios.post(
+          `${API_URL}/stripe/confirm-payment`,
+          { 
+            paymentIntentId: paymentIntent.id,
+            packageId
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (response.data.success) {
+          onPaymentSuccess(paymentIntent.id);
+        } else {
+          throw new Error(response.data.message || 'Error confirming payment');
+        }
+      } else {
+        throw new Error('Payment was not completed successfully');
+      }
+    } catch (err: any) {
+      console.error('Payment error:', err);
+      setError(err.message || 'There was an error processing your payment');
+      onPaymentError(err.message || 'There was an error processing your payment');
+    } finally {
+      setLoading(false);
     }
   };
 

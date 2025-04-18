@@ -8,7 +8,8 @@ import {
   setDefaultPaymentMethod,
   updateBillingDetails,
   getBillingDetails,
-  confirmPaymentAndProvisionPackage
+  confirmPaymentAndProvisionPackage,
+  confirmPaymentAndCreateGiftCard
 } from '../controllers/stripeController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -19,6 +20,9 @@ router.post('/create-payment-intent', protect, createPaymentIntent);
 
 // Confirm payment and provision package
 router.post('/confirm-payment', protect, confirmPaymentAndProvisionPackage);
+
+// Confirm payment and create gift card
+router.post('/confirm-gift-card', protect, confirmPaymentAndCreateGiftCard);
 
 // Stripe webhook endpoint (no auth required - called by Stripe)
 router.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);

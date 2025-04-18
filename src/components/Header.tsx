@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ClipboardList, Users, Menu, X } from 'lucide-react';
+import { ClipboardList, Users, Menu, X, Gift, Package } from 'lucide-react';
 
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -33,7 +33,19 @@ const Header: React.FC = () => {
                 to="/packages"
                 className={`px-3 py-2 rounded-md text-sm font-medium ${pathname === '/packages' ? 'text-white bg-navy-700' : 'text-navy-300 hover:text-white hover:bg-navy-750'}`}
               >
-                Packages
+                <span className="flex items-center">
+                  <Package className="h-4 w-4 mr-1" />
+                  Packages
+                </span>
+              </Link>
+              <Link
+                to="/gift-cards"
+                className={`px-3 py-2 rounded-md text-sm font-medium ${pathname === '/gift-cards' ? 'text-white bg-navy-700' : 'text-navy-300 hover:text-white hover:bg-navy-750'}`}
+              >
+                <span className="flex items-center">
+                  <Gift className="h-4 w-4 mr-1" />
+                  Gift Cards
+                </span>
               </Link>
               {isAdmin && (
                 <Link
@@ -93,7 +105,20 @@ const Header: React.FC = () => {
             onClick={() => setIsMenuOpen(false)}
             className={`block px-3 py-2 rounded-md text-sm font-medium ${pathname === '/packages' ? 'text-white bg-navy-700' : 'text-navy-300 hover:text-white hover:bg-navy-750'}`}
           >
-            Packages
+            <span className="flex items-center">
+              <Package className="h-4 w-4 mr-1" />
+              Packages
+            </span>
+          </Link>
+          <Link
+            to="/gift-cards"
+            onClick={() => setIsMenuOpen(false)}
+            className={`block px-3 py-2 rounded-md text-sm font-medium ${pathname === '/gift-cards' ? 'text-white bg-navy-700' : 'text-navy-300 hover:text-white hover:bg-navy-750'}`}
+          >
+            <span className="flex items-center">
+              <Gift className="h-4 w-4 mr-1" />
+              Gift Cards
+            </span>
           </Link>
           {isAdmin && (
             <Link
@@ -107,16 +132,6 @@ const Header: React.FC = () => {
               </span>
             </Link>
           )}
-          <Link 
-            to="/questionnaire-history" 
-            onClick={() => setIsMenuOpen(false)}
-            className="block px-3 py-2 rounded-md text-sm font-medium text-navy-300 hover:text-white hover:bg-navy-750"
-          >
-            <span className="flex items-center">
-              <ClipboardList className="w-4 h-4 mr-1" />
-              Health History
-            </span>
-          </Link>
         </div>
       </div>
     </header>

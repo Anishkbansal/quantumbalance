@@ -28,6 +28,7 @@ import About from './pages/About';
 import ScientificEvidence from './pages/ScientificEvidence';
 import ScalarHealing from './pages/ScalarHealing';
 import Packages from './pages/Packages';
+import GiftCards from './pages/GiftCards';
 import Register from './pages/auth/Register';
 import Login from './pages/auth/Login';
 import VerifyEmail from './pages/auth/VerifyEmail';
@@ -53,6 +54,7 @@ const App: React.FC = () => {
               <Route path="/scientific-evidence" element={<ScientificEvidence />} />
               <Route path="/scalar-healing" element={<ScalarHealing />} />
               <Route path="/packages" element={<Packages />} />
+              <Route path="/gift-cards" element={<GiftCards />} />
               <Route path="/register" element={<Register />} />
               <Route path="/login" element={<Login />} />
               <Route path="/verify-email" element={<VerifyEmail />} />

@@ -3,9 +3,11 @@ import Stripe from 'stripe';
 import User from '../models/User.js';
 import Package from '../models/Package.js';
 import UserPackage from '../models/UserPackage.js';
+import GiftCard from '../models/GiftCard.js';
 import { createCustomEmailTemplate, sendEmail, sendPaymentConfirmation, sendPaymentNotificationToAdmin } from '../utils/emailService.js';
 import mongoose from 'mongoose';
 import { generateAIPrescription } from '../utils/prescriptionService.js';
+import * as giftCardController from '../controllers/giftCardController.js';
 
 dotenv.config();
 
@@ -17,19 +19,20 @@ console.log('Stripe controller initialized');
 console.log('Environment:', process.env.NODE_ENV);
 console.log('Stripe API version:', stripe.getApiField('version'));
 
-// Create a payment intent for purchasing a package
+// Create a payment intent for purchasing a package or gift card
 export const createPaymentIntent = async (req, res) => {
   console.log('Creating payment intent...');
   console.log('Request body:', req.body);
   
   try {
-    const { packageId, setupFutureUsage, countryCode, useExistingPaymentMethod } = req.body;
+    const { packageId, setupFutureUsage, countryCode, useExistingPaymentMethod, currency } = req.body;
     const userId = req.user._id;
 
     console.log('Package ID:', packageId);
     console.log('User ID:', userId);
     console.log('Country Code:', countryCode);
     console.log('Using existing payment method:', useExistingPaymentMethod);
+    console.log('Currency:', currency);
 
     // Validate input
     if (!packageId) {
@@ -40,7 +43,29 @@ export const createPaymentIntent = async (req, res) => {
       });
     }
 
-    // Find the package
+    // Special handling for gift card purchases
+    let amount;
+    let metadata = {
+      userId: userId.toString(),
+      countryCode: countryCode || 'US'
+    };
+
+    if (packageId === 'gift-card') {
+      // For gift cards, amount should be provided in request body
+      if (!req.body.amount) {
+        return res.status(400).json({
+          success: false,
+          message: 'Amount is required for gift card purchases'
+        });
+      }
+      
+      amount = Math.round(parseFloat(req.body.amount) * 100); // Convert to cents
+      metadata.isGiftCard = 'true';
+      metadata.recipientName = req.body.recipientName || '';
+      metadata.recipientEmail = req.body.recipientEmail || '';
+      metadata.giftCardCurrency = currency || 'GBP';
+    } else {
+      // Find the package for regular package purchases
     const package_ = await Package.findById(packageId);
     if (!package_) {
       console.log('Error: Package not found');
@@ -51,6 +76,11 @@ export const createPaymentIntent = async (req, res) => {
     }
 
     console.log('Found package:', package_.name);
+      amount = Math.round(package_.price * 100); // Convert to cents
+      metadata.packageId = packageId.toString();
+      metadata.packageType = package_.type;
+      metadata.packageName = package_.name;
+    }
 
     // Find the user
     const user = await User.findById(userId);
@@ -63,22 +93,13 @@ export const createPaymentIntent = async (req, res) => {
     }
 
     console.log('Found user:', user.email);
-
-    // Calculate the amount in cents (Stripe requires amount in smallest currency unit)
-    const amount = Math.round(package_.price * 100);
     console.log('Amount (cents):', amount);
 
     // Create payment intent options
     const paymentIntentOptions = {
       amount,
-      currency: countryCode === 'US' ? 'usd' : 'eur', // Use EUR for non-US countries
-      metadata: {
-        userId: userId.toString(),
-        packageId: packageId.toString(),
-        packageType: package_.type,
-        packageName: package_.name,
-        countryCode: countryCode || 'US' // Store the country code in metadata
-      }
+      currency: currency ? currency.toLowerCase() : (countryCode === 'US' ? 'usd' : 'gbp'),
+      metadata
     };
 
     // If using existing payment method, include the customer ID
@@ -134,8 +155,95 @@ export const handleWebhook = async (req, res) => {
     case 'payment_intent.succeeded':
       const paymentIntent = event.data.object;
       console.log('Payment intent succeeded:', paymentIntent.id);
-      // Handle successful payment here
-      // Update user's package, etc.
+      
+      try {
+        // Check if this is a gift card purchase
+        if (paymentIntent.metadata?.isGiftCard === 'true') {
+          console.log('Processing gift card purchase');
+          
+          // Find the user
+          const user = await User.findById(paymentIntent.metadata.userId);
+          if (!user) {
+            console.error('User not found for gift card purchase:', paymentIntent.metadata.userId);
+            break;
+          }
+          
+          // Check if a gift card already exists for this payment
+          const existingGiftCard = await GiftCard.findOne({ paymentIntentId: paymentIntent.id });
+          if (existingGiftCard) {
+            console.log('Gift card already created for this payment:', existingGiftCard.code);
+            break;
+          }
+          
+          // Generate a unique gift card code
+          let code;
+          let isUnique = false;
+          while (!isUnique) {
+            code = GiftCard.generateCode();
+            // Check if code already exists
+            const codeExists = await GiftCard.findOne({ code });
+            if (!codeExists) {
+              isUnique = true;
+            }
+          }
+          
+          // Create the gift card
+          const giftCard = new GiftCard({
+            code,
+            amount: paymentIntent.amount / 100, // Convert from cents
+            currency: paymentIntent.metadata.giftCardCurrency || 'GBP',
+            buyer: paymentIntent.metadata.userId,
+            recipient: {
+              name: paymentIntent.metadata.recipientName || 'Gift Recipient',
+              email: paymentIntent.metadata.recipientEmail || user.email
+            },
+            paymentIntentId: paymentIntent.id
+          });
+          
+          await giftCard.save();
+          console.log('Gift card created via webhook:', giftCard.code);
+          
+          // Send emails if recipient info is available
+          if (paymentIntent.metadata.recipientEmail) {
+            try {
+              const emailContent = `
+                <h1>You've Received a Gift Card!</h1>
+                <p>${user.name} has sent you a gift card for ${giftCard.amount} ${giftCard.currency}.</p>
+                <p>Gift Card Code: <strong>${code}</strong></p>
+                <p>You can redeem this code at our website to apply the balance to your account.</p>
+              `;
+              
+              await sendEmail({
+                to: paymentIntent.metadata.recipientEmail,
+                subject: 'You\'ve Received a Quantum Balance Gift Card!',
+                html: emailContent
+              });
+              
+              // Also send a confirmation to the buyer
+              const buyerEmailContent = `
+                <h1>Gift Card Purchase Confirmation</h1>
+                <p>You have successfully purchased a gift card for ${paymentIntent.metadata.recipientName}.</p>
+                <p>Amount: ${giftCard.amount} ${giftCard.currency}</p>
+                <p>Gift Card Code: <strong>${code}</strong></p>
+                <p>The recipient will receive an email with the gift card details.</p>
+              `;
+              
+              await sendEmail({
+                to: user.email,
+                subject: 'Gift Card Purchase Confirmation',
+                html: buyerEmailContent
+              });
+            } catch (emailError) {
+              console.error('Error sending gift card emails via webhook:', emailError);
+            }
+          }
+        } else {
+          // Handle regular package purchases
+          // Existing package processing code here...
+        }
+      } catch (err) {
+        console.error('Error processing payment success webhook:', err);
+      }
       break;
     default:
       console.log(`Unhandled event type: ${event.type}`);
@@ -696,6 +804,165 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
       success: false,
       message: error.message || 'Error processing payment confirmation',
       error: error.toString()
+    });
+  }
+};
+
+// Confirm payment and create gift card
+export const confirmPaymentAndCreateGiftCard = async (req, res) => {
+  try {
+    const { paymentIntentId, recipientName, recipientEmail, amount, currency } = req.body;
+    const userId = req.user._id;
+    
+    if (!paymentIntentId || !recipientName || !recipientEmail || !amount || !currency) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+    
+    // Retrieve payment intent to verify it's succeeded
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment has not been completed'
+      });
+    }
+    
+    // Generate a unique gift card code
+    let code;
+    let isUnique = false;
+    while (!isUnique) {
+      code = GiftCard.generateCode();
+      // Check if code already exists
+      const existingGiftCard = await GiftCard.findOne({ code });
+      if (!existingGiftCard) {
+        isUnique = true;
+      }
+    }
+    
+    // Create the gift card
+    const giftCard = new GiftCard({
+      code,
+      amount,
+      currency,
+      buyer: userId,
+      recipient: {
+        name: recipientName,
+        email: recipientEmail
+      },
+      paymentIntentId
+    });
+    
+    await giftCard.save();
+    
+    // Send email to recipient with gift card details
+    try {
+      const user = await User.findById(userId);
+      const emailContent = `
+        <h1>You've Received a Gift Card!</h1>
+        <p>${user.name} has sent you a gift card for ${amount} ${currency}.</p>
+        <p>Gift Card Code: <strong>${code}</strong></p>
+        <p>You can redeem this code at our website to apply the balance to your account.</p>
+      `;
+      
+      await sendEmail({
+        to: recipientEmail,
+        subject: 'You\'ve Received a Quantum Balance Gift Card!',
+        html: emailContent
+      });
+      
+      // Also send a confirmation to the buyer
+      const buyerEmailContent = `
+        <h1>Gift Card Purchase Confirmation</h1>
+        <p>You have successfully purchased a gift card for ${recipientName}.</p>
+        <p>Amount: ${amount} ${currency}</p>
+        <p>Gift Card Code: <strong>${code}</strong></p>
+        <p>The recipient will receive an email with the gift card details.</p>
+      `;
+      
+      await sendEmail({
+        to: user.email,
+        subject: 'Gift Card Purchase Confirmation',
+        html: buyerEmailContent
+      });
+    } catch (emailError) {
+      console.error('Error sending gift card emails:', emailError);
+      // Don't fail the request if email sending fails
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Gift card created successfully',
+      giftCard: {
+        code: giftCard.code,
+        amount: giftCard.amount,
+        currency: giftCard.currency,
+        recipient: giftCard.recipient
+      }
+    });
+  } catch (error) {
+    console.error('Error creating gift card:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error creating gift card'
+    });
+  }
+};
+
+export const confirmGiftCard = async (req, res) => {
+  try {
+    const { paymentIntentId, amount, currency, recipientName, recipientEmail, message } = req.body;
+    
+    if (!paymentIntentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment intent ID is required'
+      });
+    }
+
+    // Verify payment intent succeeded
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment has not succeeded'
+      });
+    }
+    
+    // Create a gift card using the gift card controller
+    const giftCardResponse = await giftCardController.createGiftCard({
+      body: {
+        amount,
+        currency,
+        recipientName,
+        recipientEmail,
+        paymentIntentId,
+        message
+      },
+      user: req.user
+    }, { json: () => {} });
+    
+    // Send email to buyer
+    // Implementation depends on your email service
+    
+    // Send email to recipient
+    // Implementation depends on your email service
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Gift card created successfully',
+      giftCard: giftCardResponse.giftCard
+    });
+  } catch (error) {
+    console.error('Error confirming gift card payment:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while confirming gift card payment',
+      error: error.message
     });
   }
 }; 

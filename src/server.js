@@ -16,6 +16,7 @@ import messageRoutes from './routes/messageRoutes.js';
 import stripeRoutes from './routes/stripeRoutes.js';
 import scalarRoutes from './routes/scalarRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import giftCardRoutes from './routes/giftCardRoutes.js';
 import cron from 'node-cron';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
@@ -86,6 +87,7 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/scalar', scalarRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/gift-cards', giftCardRoutes);
 
 // Add a test endpoint directly in server.js
 app.get('/api-test', (req, res) => {

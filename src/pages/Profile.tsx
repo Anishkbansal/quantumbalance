@@ -10,8 +10,11 @@ import ProfilePicture from '../components/profile/ProfilePicture';
 import UserInfoForm from '../components/profile/UserInfoForm';
 import { convertFileToBase64 } from '../utils/formatters';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard } from 'lucide-react';
+import { CreditCard, UserIcon, Gift } from 'lucide-react';
 import { API_URL } from '../config/constants';
+import ProfileGiftCards from './Profile/GiftCards';
+
+type TabType = 'profile' | 'giftcards' | 'payment';
 
 const Profile: React.FC = () => {
   const { user: authUser, updateUser } = useAuth();
@@ -19,6 +22,7 @@ const Profile: React.FC = () => {
   const user = authUser as unknown as User;
   const navigate = useNavigate();
   
+  const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -102,86 +106,109 @@ const Profile: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Tab switcher
+  const TabNavigation = () => (
+    <div className="border-b border-navy-700 mb-6">
+      <div className="flex -mb-px">
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={`flex items-center px-4 py-2 border-b-2 font-medium text-sm mr-4 ${
+            activeTab === 'profile'
+              ? 'border-gold-500 text-gold-500'
+              : 'border-transparent text-navy-300 hover:text-navy-200 hover:border-navy-600'
+          }`}
+        >
+          <UserIcon className="w-4 h-4 mr-2" />
+          <span>Profile</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('giftcards')}
+          className={`flex items-center px-4 py-2 border-b-2 font-medium text-sm mr-4 ${
+            activeTab === 'giftcards'
+              ? 'border-gold-500 text-gold-500'
+              : 'border-transparent text-navy-300 hover:text-navy-200 hover:border-navy-600'
+          }`}
+        >
+          <Gift className="w-4 h-4 mr-2" />
+          <span>Gift Cards</span>
+        </button>
+        <button
+          onClick={() => navigate('/profile/payment-methods')}
+          className={`flex items-center px-4 py-2 border-b-2 font-medium text-sm ${
+            activeTab === 'payment'
+              ? 'border-gold-500 text-gold-500'
+              : 'border-transparent text-navy-300 hover:text-navy-200 hover:border-navy-600'
+          }`}
+        >
+          <CreditCard className="w-4 h-4 mr-2" />
+          <span>Payment Methods</span>
+        </button>
+      </div>
+    </div>
+  );
+  
+  const renderProfileContent = () => (
+    <>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gold-500 mb-2">Your Profile</h1>
+        <p className="text-navy-300">View and update your account information</p>
+        
+        <ErrorMessage className="mt-4">{error}</ErrorMessage>
+        <SuccessMessage className="mt-4">{success}</SuccessMessage>
+        
+        <div className="flex justify-end mt-4">
+          <Button
+            onClick={handleEditToggle}
+            variant={isEditing ? 'secondary' : 'primary'}
+          >
+            {isEditing ? 'Cancel Edit' : 'Edit Profile'}
+          </Button>
+          
+          {isEditing && (
+            <Button
+              onClick={saveProfile}
+              variant="success"
+              loading={loading}
+              className="ml-2"
+            >
+              Save Changes
+            </Button>
+          )}
+        </div>
+      </div>
+      
+      <Card>
+        <ProfilePicture 
+          name={user?.name || ''}
+          profileUrl={previewUrl}
+          isEditing={isEditing}
+          onFileChange={handleFileChange}
+        />
+        
+        <UserInfoForm
+          name={name}
+          setName={setName}
+          email={user?.email || ''}
+          phone={phone}
+          setPhone={setPhone}
+          isEditing={isEditing}
+        />
+      </Card>
+      
+      <div className="mt-6">
+        <DeleteAccount hasActivePackage={hasActivePackage} />
+      </div>
+    </>
+  );
   
   return (
     <div className="min-h-screen bg-navy-900 py-8">
-      <div className="max-w-2xl mx-auto p-4 md:p-6">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gold-500 mb-2">Your Profile</h1>
-          <p className="text-navy-300">View and update your account information</p>
-          
-          <ErrorMessage className="mt-4">{error}</ErrorMessage>
-          <SuccessMessage className="mt-4">{success}</SuccessMessage>
-          
-          <div className="flex justify-end mt-4">
-            <Button
-              onClick={handleEditToggle}
-              variant={isEditing ? 'secondary' : 'primary'}
-            >
-              {isEditing ? 'Cancel Edit' : 'Edit Profile'}
-            </Button>
-            
-            {isEditing && (
-              <Button
-                onClick={saveProfile}
-                variant="success"
-                loading={loading}
-                className="ml-2"
-              >
-                Save Changes
-              </Button>
-            )}
-          </div>
-        </div>
+      <div className="max-w-4xl mx-auto p-4 md:p-6">
+        <TabNavigation />
         
-        {/* Profile content */}
-        <Card>
-          <ProfilePicture 
-            name={user?.name || ''}
-            profileUrl={previewUrl}
-            isEditing={isEditing}
-            onFileChange={handleFileChange}
-          />
-          
-          <UserInfoForm
-            name={name}
-            setName={setName}
-            email={user?.email || ''}
-            phone={phone}
-            setPhone={setPhone}
-            isEditing={isEditing}
-          />
-        </Card>
-        
-        {/* Payment Methods */}
-        <div className="mt-6">
-          <Card>
-            <div className="p-4 flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="mr-4 bg-navy-700 p-2 rounded-full">
-                  <CreditCard size={20} className="text-gold-500" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-white">Payment Methods</h3>
-                  <p className="text-navy-300 text-sm">Manage your saved payment methods</p>
-                </div>
-              </div>
-              <Button
-                onClick={() => navigate('/profile/payment-methods')}
-                variant="secondary"
-                className="border-navy-600 hover:bg-navy-700 hover:text-gold-500"
-              >
-                Manage
-              </Button>
-            </div>
-          </Card>
-        </div>
-        
-        {/* Delete Account */}
-        <div className="mt-6">
-          <DeleteAccount hasActivePackage={hasActivePackage} />
-        </div>
+        {activeTab === 'profile' && renderProfileContent()}
+        {activeTab === 'giftcards' && <ProfileGiftCards />}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, CreditCard, Stethoscope, LogOut, AudioWaveform as Waveform, Info, FlaskRound as Flask, Package, Menu, X, LogIn, Zap, User, AlertCircle, MessageSquare, Music } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, CreditCard, Stethoscope, LogOut, AudioWaveform as Waveform, Info, FlaskRound as Flask, Package, Menu, X, LogIn, Zap, User, AlertCircle, MessageSquare, Music, Gift } from 'lucide-react';
 import VerifyEmailButton from './VerifyEmailButton';
 import Footer from './Footer';
 import { useAuth } from '../../contexts/AuthContext';
@@ -53,6 +53,7 @@ const Layout = () => {
     { name: 'Scientific Evidence', href: '/scientific-evidence', icon: Flask },
     { name: 'Scalar Healing', href: '/scalar-healing', icon: Zap },
     { name: 'Packages', href: '/packages', icon: Package },
+    { name: 'Gift Cards', href: '/gift-cards', icon: Gift },
   ];
 
   const toggleMobileMenu = () => {

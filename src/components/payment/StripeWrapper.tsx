@@ -31,12 +31,31 @@ interface StripeWrapperProps {
   onPaymentSuccess: (paymentId: string) => void;
   onPaymentError: (error: string) => void;
   onCancel: () => void;
+  additionalData?: Record<string, any>;
 }
 
-const StripeWrapper: React.FC<StripeWrapperProps> = (props) => {
+const StripeWrapper: React.FC<StripeWrapperProps> = ({
+  packageId,
+  packageName,
+  packagePrice,
+  currency,
+  onPaymentSuccess,
+  onPaymentError,
+  onCancel,
+  additionalData
+}) => {
   return (
     <Elements stripe={stripePromise}>
-      <StripePayment {...props} />
+      <StripePayment
+        packageId={packageId}
+        packageName={packageName}
+        packagePrice={packagePrice}
+        currency={currency}
+        onPaymentSuccess={onPaymentSuccess}
+        onPaymentError={onPaymentError}
+        onCancel={onCancel}
+        additionalData={additionalData}
+      />
     </Elements>
   );
 };
