@@ -1,5 +1,11 @@
 import GiftCard from '../models/GiftCard.js';
 import { EXCHANGE_RATES } from '../config/constants.js';
+import User from '../models/User.js';
+import { sendEmail } from '../utils/email.js';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 // Minimum amount in GBP is 1
 const MIN_AMOUNT_GBP = 1;
@@ -277,6 +283,136 @@ export const redeemGiftCard = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'An error occurred while redeeming gift card',
+      error: error.message
+    });
+  }
+};
+
+// Apply gift card to a package purchase
+export const applyGiftCardToPackage = async (req, res) => {
+  try {
+    const { code, packageId, amount, currency } = req.body;
+    
+    if (!code || !packageId || !amount || !currency) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+    
+    // Find the gift card
+    const giftCard = await GiftCard.findOne({ code })
+      .populate('buyer', 'name email');
+    
+    if (!giftCard) {
+      return res.status(404).json({
+        success: false,
+        message: 'Gift card not found'
+      });
+    }
+    
+    // Check if gift card is active
+    if (giftCard.isExpired()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gift card has expired'
+      });
+    }
+    
+    // Check if gift card has any remaining balance
+    const remainingBalance = giftCard.getRemainingBalance();
+    if (remainingBalance <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Gift card has no remaining balance'
+      });
+    }
+    
+    // Convert package amount to gift card currency if they're different
+    let packageAmountInGiftCardCurrency = amount;
+    if (currency !== giftCard.currency) {
+      // Convert package amount to GBP
+      const packageAmountInGBP = currency === 'GBP' 
+        ? amount 
+        : amount / EXCHANGE_RATES[currency];
+      
+      // Convert GBP to gift card currency
+      packageAmountInGiftCardCurrency = giftCard.currency === 'GBP'
+        ? packageAmountInGBP
+        : packageAmountInGBP * EXCHANGE_RATES[giftCard.currency];
+    }
+    
+    // Calculate how much of the gift card will be used
+    const amountToUse = Math.min(remainingBalance, packageAmountInGiftCardCurrency);
+    
+    // Calculate remaining balance after usage
+    const newRemainingBalance = remainingBalance - amountToUse;
+    
+    // Calculate amount to charge customer in requested currency
+    let amountToCharge = 0;
+    if (amountToUse < packageAmountInGiftCardCurrency) {
+      // Convert the remainder to the request currency
+      const remainderInGiftCardCurrency = packageAmountInGiftCardCurrency - amountToUse;
+      
+      // Convert to GBP first if needed
+      const remainderInGBP = giftCard.currency === 'GBP' 
+        ? remainderInGiftCardCurrency 
+        : remainderInGiftCardCurrency / EXCHANGE_RATES[giftCard.currency];
+      
+      // Then convert to requested currency
+      amountToCharge = currency === 'GBP'
+        ? remainderInGBP
+        : remainderInGBP * EXCHANGE_RATES[currency];
+      
+      // Round to 2 decimal places
+      amountToCharge = Math.round(amountToCharge * 100) / 100;
+    }
+    
+    // IMPORTANT: Do NOT update the gift card balance here
+    // We'll only do that when the payment is confirmed
+    // This addresses the issue where gift cards were being "spent" even if payment was never completed
+    
+    // Convert the discount amount to the requested currency for response
+    let discountAmountInRequestedCurrency = amountToUse;
+    if (currency !== giftCard.currency) {
+      // Convert to GBP first
+      const discountAmountInGBP = giftCard.currency === 'GBP'
+        ? amountToUse
+        : amountToUse / EXCHANGE_RATES[giftCard.currency];
+      
+      // Then to requested currency
+      discountAmountInRequestedCurrency = currency === 'GBP'
+        ? discountAmountInGBP
+        : discountAmountInGBP * EXCHANGE_RATES[currency];
+      
+      // Round to 2 decimal places
+      discountAmountInRequestedCurrency = Math.round(discountAmountInRequestedCurrency * 100) / 100;
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Gift card applied successfully',
+      giftCard: {
+        _id: giftCard._id,
+        code: giftCard.code,
+        amount: giftCard.amount,
+        currency: giftCard.currency,
+        isRedeemed: giftCard.isRedeemed,
+        amountUsed: giftCard.amountUsed,
+        remainingBalance: remainingBalance,  // Return the current balance, not the projected balance
+        status: giftCard.getStatus(),
+        expiryDate: giftCard.expiryDate
+      },
+      discountAmount: discountAmountInRequestedCurrency,
+      remainingBalance: remainingBalance,  // Return the current balance, not the projected balance
+      amountToCharge: amountToCharge,
+      amountToUse: amountToUse  // Add this to use during payment confirmation
+    });
+  } catch (error) {
+    console.error('Error applying gift card to package:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'An error occurred while applying gift card',
       error: error.message
     });
   }

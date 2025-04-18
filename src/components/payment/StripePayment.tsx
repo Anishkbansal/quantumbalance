@@ -10,6 +10,8 @@ import { Card } from "../ui/Card";
 import { API_URL } from '../../config/constants';
 import { useCurrency } from '../../contexts/CurrencyContext';
 import { formatCurrency } from '../../utils/formatters';
+import { getGiftCardByCode, applyGiftCardToPackage } from '../../services/giftCardService';
+import GiftCardRedemption from './GiftCardRedemption';
 
 // Country data with postal code labels
 interface CountryData {
@@ -70,6 +72,23 @@ interface PaymentMethod {
   isDefault: boolean;
 }
 
+interface GiftCardDetails {
+  code: string;
+  amountToUse: number;
+  currency: string;
+}
+
+interface ConfirmPaymentData {
+  paymentIntentId: string;
+  packageId: string;
+  giftCardDetails?: GiftCardDetails;
+  amount?: number;
+  currency?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  message?: string;
+}
+
 const StripePayment: React.FC<StripePaymentProps> = ({
   packageId,
   packageName,
@@ -114,6 +133,10 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   // Current selected country
   const [selectedCountry, setSelectedCountry] = useState<CountryData | null>(null);
   
+  const [appliedGiftCard, setAppliedGiftCard] = useState<any>(null);
+  const [applyingGiftCard, setApplyingGiftCard] = useState(false);
+  const [effectivePrice, setEffectivePrice] = useState(convertedPrice);
+  
   // Billing details - we'll still need this for the payment
   const [billingDetails, setBillingDetails] = useState<BillingDetails>({
     name: '',
@@ -154,6 +177,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   
   // Format price as currency
   const formattedPrice = formatCurrency(convertedPrice, currency);
+  const formattedEffectivePrice = formatCurrency(effectivePrice, currency);
   
   // Fetch user's saved payment methods on component mount
   useEffect(() => {
@@ -207,6 +231,12 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     fetchPaymentMethods();
   }, []);
   
+  useEffect(() => {
+    if (clientSecret && effectivePrice !== convertedPrice) {
+      updatePaymentIntent();
+    }
+  }, [effectivePrice, clientSecret]);
+  
   // Fetch user's billing details
   const fetchBillingDetails = async () => {
     try {
@@ -233,7 +263,6 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
   
-  // Update createPaymentIntent to support gift card purchases
   const createPaymentIntent = async (methods: PaymentMethod[]) => {
     try {
       setLoading(true);
@@ -247,28 +276,29 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         countryCode: billingDetails.address.country,
         useExistingPaymentMethod: methods.length > 0 && activeTab !== 'new',
         currency,
-        convertedPrice: convertedPrice  // Send the converted price to the server
+        convertedPrice: effectivePrice
       };
       
       // For gift cards, include additional data
       if (packageId === 'gift-card') {
-        // For gift cards, use packagePrice directly as it's already in the selected currency
+        // Use packagePrice as amount since effectivePrice won't apply to the initial intent
         requestPayload.amount = packagePrice;
-        
-        // Add recipient data from additionalData if available
         if (additionalData) {
-          if (additionalData.recipientName) {
-            requestPayload.recipientName = additionalData.recipientName;
-          }
-          if (additionalData.recipientEmail) {
-            requestPayload.recipientEmail = additionalData.recipientEmail;
-          }
-          if (additionalData.message) {
-            requestPayload.message = additionalData.message;
-          }
+          requestPayload.recipientName = additionalData.recipientName;
+          requestPayload.recipientEmail = additionalData.recipientEmail;
+          requestPayload.message = additionalData.message;
         }
+        // For gift cards, send the original packagePrice as convertedPrice initially
+        requestPayload.convertedPrice = packagePrice; 
       }
       
+      // If a gift card is ALREADY applied when creating the intent (less common, but possible)
+      if (appliedGiftCard) {
+        requestPayload.giftCardCode = appliedGiftCard.code;
+      }
+      
+      console.log('Creating Payment Intent Payload:', requestPayload);
+
       const response = await axios.post(
         `${API_URL}/stripe/create-payment-intent`,
         requestPayload,
@@ -295,6 +325,47 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
   
+  const updatePaymentIntent = async () => {
+    if (!paymentIntentId) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const token = localStorage.getItem('token');
+      console.log(`Updating Payment Intent ${paymentIntentId} with amount ${effectivePrice}`);
+
+      const response = await axios.post(
+        `${API_URL}/stripe/update-payment-intent`,
+        {
+          paymentIntentId,
+          amount: effectivePrice,
+          currency
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (response.data.success) {
+        setClientSecret(response.data.clientSecret);
+        console.log('Payment Intent updated successfully');
+      } else {
+        setError(response.data.message || 'Could not update payment amount');
+        toast.error('Failed to update payment amount after applying gift card.');
+      }
+    } catch (err: any) {
+      console.error('Error updating payment intent:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to update payment amount');
+      toast.error('An error occurred while updating the payment amount.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Update selected country when country selection changes
   useEffect(() => {
     const country = COUNTRIES.find(c => c.code === billingDetails.address.country);
@@ -335,7 +406,6 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     setShowConfirmDialog(true);
   };
   
-  // Update processPayment to handle the active tab
   const processPayment = async () => {
     if (!stripe || !clientSecret) {
       return;
@@ -348,14 +418,9 @@ const StripePayment: React.FC<StripePaymentProps> = ({
       let result;
       
       if (activeTab === 'new') {
-        // For manual payment with new card
         const cardElement = elements?.getElement(CardElement);
+        if (!cardElement) throw new Error('Card element not found');
         
-        if (!cardElement) {
-          throw new Error('Card element not found');
-        }
-        
-        // Process with entered card
         result = await stripe.confirmCardPayment(clientSecret, {
           payment_method: {
             card: cardElement,
@@ -375,7 +440,6 @@ const StripePayment: React.FC<StripePaymentProps> = ({
           }
         });
       } else {
-        // For saved payment method
         result = await stripe.confirmCardPayment(clientSecret, {
           payment_method: selectedPaymentMethodId as string
         });
@@ -385,11 +449,60 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         throw new Error(result.error.message || 'Payment failed');
       } else {
         if (result.paymentIntent.status === 'succeeded') {
-          // Payment succeeded
-          toast.success('Payment successful!');
-          onPaymentSuccess(result.paymentIntent.id);
+          // Payment succeeded - Now confirm with backend, potentially applying gift card
+          const token = localStorage.getItem('token');
+          let confirmEndpoint = `${API_URL}/stripe/confirm-payment`;
+          let confirmData: ConfirmPaymentData = {
+            paymentIntentId: result.paymentIntent.id,
+            packageId
+          };
+
+          // If a gift card was applied, include its details for final application
+          if (appliedGiftCard) {
+            const discountAmount = Math.min(appliedGiftCard.remainingBalance, convertedPrice);
+            confirmData = {
+              ...confirmData,
+              giftCardDetails: {
+                code: appliedGiftCard.code,
+                amountToUse: discountAmount,
+                currency: appliedGiftCard.currency
+              }
+            };
+          }
+          
+          // Check if this is a gift card purchase itself
+          if (packageId === 'gift-card') {
+            confirmEndpoint = `${API_URL}/stripe/confirm-gift-card`; 
+            confirmData = {
+              ...confirmData,
+              amount: packagePrice,
+              currency,
+              recipientName: additionalData?.recipientName,
+              recipientEmail: additionalData?.recipientEmail,
+              message: additionalData?.message
+            };
+          }
+
+          console.log('Confirming Payment with Backend Data:', confirmData);
+          
+          const confirmResponse = await axios.post(
+            confirmEndpoint,
+            confirmData,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          
+          if (confirmResponse.data.success) {
+            toast.success('Payment successful!');
+            onPaymentSuccess(result.paymentIntent.id);
+          } else {
+            throw new Error(confirmResponse.data.message || 'Failed to confirm purchase with backend');
+          }
         } else {
-          // Payment requires additional action
           toast.error('Payment requires additional verification. Please try again.');
         }
       }
@@ -424,41 +537,87 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
 
+  const handleApplyGiftCard = async (giftCardCode: string) => {
+    if (packageId === 'gift-card') {
+      toast.error("Cannot apply a gift card to a gift card purchase.");
+      return;
+    }
+    try {
+      setApplyingGiftCard(true);
+      setError(null);
+      
+      const result = await applyGiftCardToPackage(
+        giftCardCode,
+        packageId,
+        convertedPrice,
+        currency
+      );
+      
+      if (result.success) {
+        setAppliedGiftCard(result.giftCard);
+        setEffectivePrice(result.amountToCharge || 0);
+        toast.success("Gift card applied successfully!");
+      } else {
+        toast.error(result.message || "Failed to apply gift card");
+      }
+    } catch (err: any) {
+      console.error('Error applying gift card:', err);
+      toast.error(err.message || "An error occurred while applying the gift card");
+    } finally {
+      setApplyingGiftCard(false);
+    }
+  };
+  
+  const handleRemoveGiftCard = () => {
+    setAppliedGiftCard(null);
+    setEffectivePrice(convertedPrice);
+    toast.success("Gift card removed");
+  };
+
   return (
-    <div className="bg-navy-800 border border-navy-700 rounded-xl shadow-lg overflow-hidden">
-      <div className="p-4 md:p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-white">Checkout: {packageName}</h3>
-          <div className="text-xl font-bold text-gold-400">{formattedPrice}</div>
+    <div className="w-full max-h-full overflow-y-auto scrollbar-thin scrollbar-thumb-navy-600 scrollbar-track-navy-800">
+      <div className="p-5 md:p-8"> 
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 pb-4 border-b border-navy-700">
+          <h3 className="text-xl font-semibold text-white mb-2 sm:mb-0">Checkout: {packageName}</h3>
+          <div className="text-lg font-semibold text-gold-400">
+            {appliedGiftCard ? `Total: ${formattedEffectivePrice}` : `Total: ${formattedPrice}`}
+          </div>
         </div>
         
-        {/* Error Display */}
         {error && (
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-4 p-3 bg-red-900/30 border border-red-900 rounded-lg text-red-200 text-sm flex items-start"
+            className="mb-6 p-4 bg-red-900/20 border border-red-700/50 rounded-lg text-red-300 text-sm flex items-start shadow-md"
           >
-            <div className="flex items-start">
-              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-              <div>{error}</div>
-            </div>
+            <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
           </motion.div>
         )}
         
-        <form onSubmit={handlePaymentSubmit} className="space-y-5">
-          {/* Payment Method Tabs */}
-          <div className="bg-navy-700/30 rounded-lg p-4">
-            <div className="mb-4">
-              <h4 className="text-white text-sm font-medium border-b border-navy-600 pb-2">Payment Method</h4>
+        {packageId !== 'gift-card' && (
+          <motion.div variants={cardVariants} className="mb-6">
+            <GiftCardRedemption
+              packagePrice={convertedPrice}
+              currency={currency}
+              onApplyGiftCard={handleApplyGiftCard}
+              appliedGiftCard={appliedGiftCard}
+              onRemoveGiftCard={handleRemoveGiftCard}
+            />
+          </motion.div>
+        )}
+
+        {effectivePrice > 0 ? (
+          <form onSubmit={handlePaymentSubmit} className="space-y-8">
+            <motion.div variants={cardVariants} className="bg-navy-700/40 rounded-lg p-5 border border-navy-600/70 shadow-sm">
+              <h4 className="text-base font-semibold text-white mb-5">Payment Method</h4>
               
-              {/* Tabs */}
               {paymentMethods.length > 0 && (
-                <div className="flex mt-3 border-b border-navy-600">
+                <div className="flex space-x-4 border-b border-navy-600 mb-5">
                   <button
                     type="button"
                     onClick={() => setActiveTab('saved')}
-                    className={`py-2 px-4 ${
+                    className={`pb-2 px-1 text-sm transition-colors ${ 
                       activeTab === 'saved' 
                         ? 'text-gold-400 border-b-2 border-gold-400 font-medium' 
                         : 'text-navy-300 hover:text-white'
@@ -469,7 +628,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('new')}
-                    className={`py-2 px-4 ${
+                    className={`pb-2 px-1 text-sm transition-colors ${ 
                       activeTab === 'new' 
                         ? 'text-gold-400 border-b-2 border-gold-400 font-medium' 
                         : 'text-navy-300 hover:text-white'
@@ -479,83 +638,86 @@ const StripePayment: React.FC<StripePaymentProps> = ({
                   </button>
                 </div>
               )}
-            </div>
-            
-            {loadingPaymentMethods ? (
-              <div className="flex justify-center py-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gold-500"></div>
-              </div>
-            ) : (
-              <>
-                {/* Saved Cards Tab Content */}
-                {activeTab === 'saved' && paymentMethods.length > 0 ? (
-                  <div className="space-y-3">
-                    {paymentMethods.map((method) => (
-                      <motion.div
-                        key={method.id}
-                        variants={cardVariants}
-                        className={`bg-navy-700/80 rounded-lg p-3 flex justify-between items-center cursor-pointer ${
-                          selectedPaymentMethodId === method.id 
-                            ? 'border-2 border-gold-500/70' 
-                            : 'border border-navy-600 hover:border-gold-500/30'
-                        }`}
-                        onClick={() => setSelectedPaymentMethodId(method.id)}
-                        whileHover={{ scale: 1.01 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <div className="flex items-center">
-                          <div className={`w-10 h-8 mr-3 flex items-center justify-center rounded-md ${
-                            method.isDefault ? 'bg-gold-500/10' : 'bg-navy-600'
-                          }`}>
-                            <CreditCard size={20} className={method.isDefault ? 'text-gold-500' : 'text-white'} />
-                          </div>
-                          
-                          <div>
-                            <div className="text-white text-sm font-medium flex items-center">
-                              {formatCardBrand(method.brand)} •••• {method.last4}
-                              {method.isDefault && (
-                                <span className="ml-2 text-xs py-0.5 px-2 bg-gold-500/20 text-gold-400 rounded-full flex items-center">
-                                  <CheckCircle size={10} className="mr-1" />
-                                  Default
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-navy-400 text-xs">
-                              Expires {method.expMonth}/{method.expYear}
+              
+              {loadingPaymentMethods ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-6 h-6 text-gold-500 animate-spin" />
+                </div>
+              ) : (
+                <AnimatePresence mode="wait">
+                  {activeTab === 'saved' && paymentMethods.length > 0 && (
+                    <motion.div 
+                      key="saved-cards"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-3"
+                    >
+                      {paymentMethods.map((method) => (
+                        <div
+                          key={method.id}
+                          className={`rounded-md p-3 flex justify-between items-center cursor-pointer border transition-colors duration-150 ${ 
+                            selectedPaymentMethodId === method.id 
+                              ? 'bg-navy-600/50 border-gold-500/80 shadow-md' 
+                              : 'bg-navy-700/60 border-navy-600 hover:border-navy-500'
+                          }`}
+                          onClick={() => setSelectedPaymentMethodId(method.id)}
+                        >
+                          <div className="flex items-center">
+                            <CreditCard size={18} className={`mr-3 ${selectedPaymentMethodId === method.id ? 'text-gold-400' : 'text-navy-300'}`} />
+                            <div>
+                              <span className="text-white text-sm font-medium">
+                                {formatCardBrand(method.brand)} •••• {method.last4}
+                              </span>
+                              <span className="text-navy-400 text-xs block"> 
+                                Expires {method.expMonth}/{method.expYear}
+                              </span>
                             </div>
                           </div>
+                          {method.isDefault && selectedPaymentMethodId !== method.id && (
+                             <span className="text-[11px] py-0.5 px-2 bg-navy-600 text-navy-300 rounded-full">
+                                Default
+                              </span>
+                          )}
+                          {selectedPaymentMethodId === method.id && (
+                            <CheckCircle size={18} className="text-gold-400" />
+                          )}
                         </div>
-                        
-                        {selectedPaymentMethodId === method.id && (
-                          <div className="w-5 h-5 rounded-full bg-gold-500 flex items-center justify-center">
-                            <CheckCircle size={14} className="text-navy-900" />
-                          </div>
-                        )}
-                      </motion.div>
-                    ))}
-                  </div>
-                ) : activeTab === 'new' || paymentMethods.length === 0 ? (
-                  /* New Card Tab Content */
-                  <div className="space-y-5">
-                    <div className="p-3 bg-navy-800/70 rounded-lg border border-navy-600">
-                      <div className="mb-4">
-                        <label htmlFor="card-element" className="block text-sm font-medium text-gray-300 mb-1">
-                          Use other Card
+                      ))}
+                    </motion.div>
+                  )}
+                  
+                  {(activeTab === 'new' || paymentMethods.length === 0) && (
+                    <motion.div 
+                      key="new-card"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-6"
+                    >
+                      <div>
+                        <label htmlFor="card-element" className="block text-sm font-medium text-gray-300 mb-1.5">
+                          Card Details
                         </label>
-                        <div className="bg-navy-700 p-3 rounded-md border border-navy-600 focus-within:border-gold-500">
+                        <div className="p-3 bg-navy-900/50 border border-navy-600 rounded-md focus-within:border-gold-500 focus-within:ring-1 focus-within:ring-gold-500 transition-all">
                           <CardElement 
+                            id="card-element"
                             options={{
                               style: {
                                 base: {
-                                  color: '#fff',
-                                  fontFamily: '"Inter", sans-serif',
-                                  fontSize: '16px',
+                                  color: '#FFFFFF',
+                                  fontFamily: 'Inter, sans-serif',
+                                  fontSize: '15px',
+                                  fontSmoothing: 'antialiased',
                                   '::placeholder': {
-                                    color: '#64748b',
+                                    color: '#94a3b8',
                                   },
                                 },
                                 invalid: {
-                                  color: '#f87171',
+                                  color: '#f87171', 
+                                  iconColor: '#f87171'
                                 },
                               },
                               hidePostalCode: true,
@@ -563,252 +725,200 @@ const StripePayment: React.FC<StripePaymentProps> = ({
                           />
                         </div>
                       </div>
-                    </div>
 
-                    {/* Billing Details Form */}
-                    <div className="bg-navy-800/70 rounded-lg border border-navy-600 p-4">
-                      <h4 className="text-white text-sm font-medium mb-4 border-b border-navy-600 pb-2">
-                        Billing Information
-                      </h4>
-                      
-                      <div className="space-y-4">
-                        {/* Personal Information */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label htmlFor="name" className="block text-gray-300 text-xs mb-1">
-                              Full Name <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              id="name"
-                              name="name"
-                              type="text"
-                              value={billingDetails.name}
-                              onChange={handleBillingInputChange}
-                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                              required
-                            />
+                      <div>
+                        <h5 className="text-base font-medium text-white mb-4">Billing Information</h5>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <InputField label="Full Name" id="name" name="name" value={billingDetails.name} onChange={handleBillingInputChange} required />
+                            <InputField label="Email" id="email" name="email" type="email" value={billingDetails.email} onChange={handleBillingInputChange} required />
                           </div>
-                          <div>
-                            <label htmlFor="email" className="block text-gray-300 text-xs mb-1">
-                              Email <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              id="email"
-                              name="email"
-                              type="email"
-                              value={billingDetails.email}
-                              onChange={handleBillingInputChange}
-                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                              required
-                            />
+                          
+                          <InputField label="Phone Number" id="phone" name="phone" type="tel" value={billingDetails.phone} onChange={handleBillingInputChange} />
+                          
+                          <InputField label="Address Line 1" id="address.line1" name="address.line1" value={billingDetails.address.line1} onChange={handleBillingInputChange} required />
+                          <InputField label="Address Line 2 (Optional)" id="address.line2" name="address.line2" value={billingDetails.address.line2 || ''} onChange={handleBillingInputChange} />
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <InputField label="City" id="address.city" name="address.city" value={billingDetails.address.city} onChange={handleBillingInputChange} required />
+                            <InputField label="State / Province" id="address.state" name="address.state" value={billingDetails.address.state} onChange={handleBillingInputChange} required />
                           </div>
-                        </div>
-                        
-                        <div>
-                          <label htmlFor="phone" className="block text-gray-300 text-xs mb-1">
-                            Phone Number
-                          </label>
-                          <input
-                            id="phone"
-                            name="phone"
-                            type="tel"
-                            value={billingDetails.phone}
-                            onChange={handleBillingInputChange}
-                            className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          />
-                        </div>
-                        
-                        {/* Address Information */}
-                        <div>
-                          <label htmlFor="address.line1" className="block text-gray-300 text-xs mb-1">
-                            Address Line 1 <span className="text-red-400">*</span>
-                          </label>
-                          <input
-                            id="address.line1"
-                            name="address.line1"
-                            type="text"
-                            value={billingDetails.address.line1}
-                            onChange={handleBillingInputChange}
-                            className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                            required
-                          />
-                        </div>
-                        
-                        <div>
-                          <label htmlFor="address.line2" className="block text-gray-300 text-xs mb-1">
-                            Address Line 2
-                          </label>
-                          <input
-                            id="address.line2"
-                            name="address.line2"
-                            type="text"
-                            value={billingDetails.address.line2 || ''}
-                            onChange={handleBillingInputChange}
-                            className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          />
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label htmlFor="address.country" className="block text-gray-300 text-xs mb-1">
-                              Country <span className="text-red-400">*</span>
-                            </label>
-                            <select
-                              id="address.country"
-                              name="address.country"
-                              value={billingDetails.address.country}
-                              onChange={handleBillingInputChange}
-                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                              required
-                            >
-                              {COUNTRIES.map(country => (
-                                <option key={country.code} value={country.code}>
-                                  {country.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label htmlFor="address.postal_code" className="block text-gray-300 text-xs mb-1">
-                              {selectedCountry?.postalCodeLabel || 'Postal Code'} <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              id="address.postal_code"
-                              name="address.postal_code"
-                              type="text"
-                              value={billingDetails.address.postal_code}
-                              onChange={handleBillingInputChange}
-                              placeholder={selectedCountry?.postalCodePlaceholder}
-                              pattern={selectedCountry?.postalCodePattern}
-                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                              required
-                            />
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label htmlFor="address.city" className="block text-gray-300 text-xs mb-1">
-                              City <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              id="address.city"
-                              name="address.city"
-                              type="text"
-                              value={billingDetails.address.city}
-                              onChange={handleBillingInputChange}
-                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor="address.state" className="block text-gray-300 text-xs mb-1">
-                              State/Province <span className="text-red-400">*</span>
-                            </label>
-                            <input
-                              id="address.state"
-                              name="address.state"
-                              type="text"
-                              value={billingDetails.address.state}
-                              onChange={handleBillingInputChange}
-                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                              required
-                            />
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label htmlFor="address.country" className="block text-xs font-medium text-gray-300 mb-1.5">
+                                Country <span className="text-red-400">*</span>
+                              </label>
+                              <select
+                                id="address.country"
+                                name="address.country"
+                                value={billingDetails.address.country}
+                                onChange={handleBillingInputChange}
+                                className="w-full px-3 py-2.5 bg-navy-900/50 border border-navy-600 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-gold-500 focus:border-gold-500 transition-colors text-sm"
+                                required
+                              >
+                                {COUNTRIES.map(country => (
+                                  <option key={country.code} value={country.code}>
+                                    {country.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                             <InputField 
+                                label={selectedCountry?.postalCodeLabel || 'Postal Code'} 
+                                id="address.postal_code" 
+                                name="address.postal_code" 
+                                value={billingDetails.address.postal_code} 
+                                onChange={handleBillingInputChange} 
+                                placeholder={selectedCountry?.postalCodePlaceholder} 
+                                pattern={selectedCountry?.postalCodePattern} 
+                                required 
+                              />
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-          
-          <motion.div 
-            className="flex justify-end mt-6"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-          >
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-4 py-2 border border-navy-600 hover:border-navy-500 rounded-md text-white mr-3 transition-colors"
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
+            </motion.div>
+
+            <motion.div 
+              className="flex flex-col sm:flex-row justify-end items-center pt-6 border-t border-navy-700 space-y-3 sm:space-y-0 sm:space-x-4"
+              variants={cardVariants}
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!stripe || !clientSecret || (activeTab === 'saved' && !selectedPaymentMethodId)}
-              className="px-6 py-2.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 rounded-md text-navy-900 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-            >
-              <CreditCard className="w-4 h-4 mr-2" />
-              Pay {formattedPrice}
-            </button>
+              <Button
+                type="button"
+                onClick={onCancel}
+                className="w-full sm:w-auto px-5 py-2.5 text-sm bg-navy-600 hover:bg-navy-500 border border-navy-500 text-white"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading || !stripe || !clientSecret || (activeTab === 'saved' && !selectedPaymentMethodId)}
+                className="w-full sm:w-auto px-6 py-2.5 text-sm flex items-center justify-center"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Pay {formattedEffectivePrice}
+                  </>
+                )}
+              </Button>
+            </motion.div>
+          </form>
+        ) : (
+          <motion.div variants={cardVariants} className="text-center">
+            <div className="bg-emerald-900/30 border border-emerald-700/50 rounded-lg p-6 mb-6 flex flex-col items-center shadow-md">
+              <CheckCircle className="w-12 h-12 text-emerald-400 mb-3" />
+              <h3 className="text-lg font-semibold text-white mb-1">Your order is free!</h3>
+              <p className="text-emerald-300 text-sm max-w-xs mx-auto">
+                The applied gift card covers the full amount. Click below to complete your order.
+              </p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row justify-center items-center space-y-3 sm:space-y-0 sm:space-x-4">
+              <Button
+                 type="button"
+                 onClick={processPayment}
+                 disabled={loading}
+                 variant="secondary"
+                 className="w-full sm:w-auto px-6 py-3 text-base flex items-center justify-center bg-emerald-600 hover:bg-emerald-500 text-white"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="animate-spin w-5 h-5 mr-2" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Complete Order
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </>
+                )}
+              </Button>
+               <Button
+                type="button"
+                onClick={onCancel}
+                className="w-full sm:w-auto px-5 py-2.5 text-sm bg-navy-600 hover:bg-navy-500 border border-navy-500 text-white"
+              >
+                Cancel
+              </Button>
+            </div>
           </motion.div>
-        </form>
+        )}
+
       </div>
       
-      {/* Confirmation Dialog with scrollable content */}
       <AnimatePresence>
-        {showConfirmDialog && (
+        {showConfirmDialog && effectivePrice > 0 && (
           <motion.div 
-            className="fixed inset-0 flex items-center justify-center z-50 px-4 py-6 overflow-y-auto"
+            className="fixed inset-0 flex items-center justify-center z-[100] p-4 bg-black/60 backdrop-blur-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <div className="absolute inset-0 bg-black/70" onClick={() => setShowConfirmDialog(false)}></div>
             <motion.div 
-              className="bg-navy-800 border border-navy-600 rounded-lg p-6 w-full max-w-md relative z-10 shadow-2xl my-8 max-h-[90vh] overflow-y-auto"
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
+              className="bg-navy-800 border border-navy-600 rounded-lg p-6 w-full max-w-sm relative shadow-xl"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 15, stiffness: 200 }}
             >
               <button 
-                className="absolute top-3 right-3 text-navy-400 hover:text-white p-1 bg-navy-700 rounded-full"
+                className="absolute top-2 right-2 text-navy-400 hover:text-white p-1.5 bg-navy-700/50 hover:bg-navy-700 rounded-full transition-colors"
                 onClick={() => setShowConfirmDialog(false)}
                 aria-label="Close dialog"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
               
-              <h3 className="text-xl font-bold text-white mb-3">Confirm Payment</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">Confirm Your Payment</h3>
               
-              <div className="bg-navy-700/50 p-4 rounded-lg mb-4">
-                <div className="flex justify-between mb-2">
+              <div className="bg-navy-700/40 border border-navy-600/70 p-4 rounded-md mb-5 space-y-2 text-sm">
+                <div className="flex justify-between">
                   <span className="text-navy-300">Package:</span>
                   <span className="text-white font-medium">{packageName}</span>
                 </div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-navy-300">Amount:</span>
-                  <span className="text-gold-400 font-bold">{formattedPrice}</span>
+                 {appliedGiftCard && (
+                   <div className="flex justify-between text-emerald-400">
+                      <span className="text-emerald-400/80">Gift Card Discount:</span>
+                      <span className="font-medium">-{formatCurrency(convertedPrice - effectivePrice, currency)}</span>
+                   </div>
+                 )}
+                <div className="flex justify-between pt-2 border-t border-navy-600">
+                  <span className="text-navy-300 font-medium">Amount to Pay:</span>
+                  <span className="text-gold-400 font-bold text-base">{formattedEffectivePrice}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-navy-300">Payment Method:</span>
+                <div className="flex justify-between text-xs pt-1">
+                  <span className="text-navy-400">Payment Method:</span>
                   <span className="text-white">
                     {activeTab === 'new' 
                       ? 'New Card' 
-                      : `${formatCardBrand(paymentMethods.find(m => m.id === selectedPaymentMethodId)?.brand || '')} •••• 
-                      ${paymentMethods.find(m => m.id === selectedPaymentMethodId)?.last4 || ''}`
-                    }
+                      : `${formatCardBrand(paymentMethods.find(m => m.id === selectedPaymentMethodId)?.brand || '')} •••• ${paymentMethods.find(m => m.id === selectedPaymentMethodId)?.last4 || ''}`}
                   </span>
                 </div>
               </div>
               
               <div className="flex space-x-3 justify-end">
-                <button
+                <Button
                   type="button"
                   onClick={() => setShowConfirmDialog(false)}
-                  className="px-4 py-2 border border-navy-600 hover:border-navy-500 rounded-md text-white transition-colors"
+                  className="px-5 py-2 text-sm bg-navy-600 hover:bg-navy-500 border border-navy-500 text-white"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   onClick={processPayment}
                   disabled={loading}
-                  className="px-6 py-2.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 rounded-md text-navy-900 font-medium transition-colors flex items-center disabled:opacity-70"
+                  className="px-6 py-2 text-sm flex items-center justify-center"
                 >
                   {loading ? (
                     <>
@@ -817,11 +927,11 @@ const StripePayment: React.FC<StripePaymentProps> = ({
                     </>
                   ) : (
                     <>
-                      Confirm Payment
-                      <ArrowRight size={16} className="ml-1" />
+                      Confirm & Pay
+                      <ArrowRight size={16} className="ml-1.5" />
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </motion.div>
           </motion.div>
@@ -830,5 +940,23 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     </div>
   );
 };
+
+interface InputFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  label: string;
+  id: string;
+}
+
+const InputField: React.FC<InputFieldProps> = ({ label, id, ...props }) => (
+  <div>
+    <label htmlFor={id} className="block text-xs font-medium text-gray-300 mb-1.5">
+      {label} {props.required && <span className="text-red-400">*</span>}
+    </label>
+    <input
+      id={id}
+      {...props}
+      className="w-full px-3 py-2.5 bg-navy-900/50 border border-navy-600 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-gold-500 focus:border-gold-500 transition-colors text-sm"
+    />
+  </div>
+);
 
 export default StripePayment; 

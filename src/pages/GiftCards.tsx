@@ -172,27 +172,38 @@ export default function GiftCards() {
               transition={{ duration: 0.2 }}
             >
               <motion.div 
-                className="relative max-w-md w-full"
+                className="relative max-w-md w-full max-h-[90vh] overflow-y-auto"
                 initial={{ scale: 0.9, y: 20 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.9, y: 20 }}
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               >
                 {parseFloat(amount) > 0 && (
-                  <StripeWrapper
-                    packageId="gift-card"
-                    packageName="Gift Card"
-                    packagePrice={parseFloat(amount)}
-                    currency={currency.code}
-                    onPaymentSuccess={handlePaymentSuccess}
-                    onPaymentError={handlePaymentError}
-                    onCancel={handleCancelPayment}
-                    additionalData={{
-                      recipientName,
-                      recipientEmail,
-                      message: message.trim() || undefined
-                    }}
-                  />
+                  <div className="relative">
+                    <button 
+                      onClick={handleCancelPayment}
+                      className="absolute top-3 right-3 z-50 bg-navy-700/80 rounded-full p-1 text-white hover:bg-navy-600 focus:outline-none"
+                      aria-label="Close payment modal"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    <StripeWrapper
+                      packageId="gift-card"
+                      packageName="Gift Card"
+                      packagePrice={parseFloat(amount)}
+                      currency={currency.code}
+                      onPaymentSuccess={handlePaymentSuccess}
+                      onPaymentError={handlePaymentError}
+                      onCancel={handleCancelPayment}
+                      additionalData={{
+                        recipientName,
+                        recipientEmail,
+                        message: message.trim() || undefined
+                      }}
+                    />
+                  </div>
                 )}
               </motion.div>
             </motion.div>

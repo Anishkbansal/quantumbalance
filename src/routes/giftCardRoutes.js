@@ -19,6 +19,9 @@ router.get('/by-code/:code', protect, giftCardController.getGiftCardByCode);
 // Future endpoint for redeeming gift cards
 router.post('/redeem', protect, giftCardController.redeemGiftCard);
 
+// Apply gift card to package purchase
+router.post('/apply-to-package', protect, giftCardController.applyGiftCardToPackage);
+
 // Get minimum amounts for each currency
 router.get('/min-amounts', giftCardController.getMinAmounts);
 

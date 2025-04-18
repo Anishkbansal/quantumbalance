@@ -184,4 +184,57 @@ export const redeemGiftCard = async (code: string): Promise<{ success: boolean; 
       message: error.response?.data?.message || error.message || 'Failed to redeem gift card'
     };
   }
+};
+
+// New function to apply gift card during checkout
+export const applyGiftCardToPackage = async (
+  code: string, 
+  packageId: string,
+  amount: number,
+  currency: string
+): Promise<{ 
+  success: boolean; 
+  message: string; 
+  giftCard?: GiftCard;
+  discountAmount?: number;
+  remainingBalance?: number;
+  amountToCharge?: number;
+}> => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await axios.post(
+      `${API_URL}/gift-cards/apply-to-package`,
+      { 
+        code,
+        packageId,
+        amount,
+        currency
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (response.data.success) {
+      return {
+        success: true,
+        message: response.data.message,
+        giftCard: response.data.giftCard,
+        discountAmount: response.data.discountAmount,
+        remainingBalance: response.data.remainingBalance,
+        amountToCharge: response.data.amountToCharge
+      };
+    }
+    
+    throw new Error(response.data.message || 'Failed to apply gift card');
+  } catch (error: any) {
+    console.error('Error applying gift card:', error);
+    return {
+      success: false,
+      message: error.response?.data?.message || error.message || 'Failed to apply gift card'
+    };
+  }
 }; 

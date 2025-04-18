@@ -4,7 +4,7 @@ import User from '../models/User.js';
 import Package from '../models/Package.js';
 import UserPackage from '../models/UserPackage.js';
 import GiftCard from '../models/GiftCard.js';
-import { createCustomEmailTemplate, sendEmail, sendPaymentConfirmation, sendPaymentNotificationToAdmin } from '../utils/emailService.js';
+import { sendEmail } from '../utils/email.js';
 import mongoose from 'mongoose';
 import { generateAIPrescription } from '../utils/prescriptionService.js';
 import * as giftCardController from '../controllers/giftCardController.js';
@@ -26,6 +26,16 @@ export const createPaymentIntent = async (req, res) => {
   
   try {
     const { packageId, setupFutureUsage, countryCode, useExistingPaymentMethod, currency, convertedPrice } = req.body;
+    
+    // Validate that user exists in request object
+    if (!req.user || !req.user._id) {
+      console.log('Error: User not authenticated or missing user ID');
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+    
     const userId = req.user._id;
 
     console.log('Package ID:', packageId);
@@ -99,18 +109,39 @@ export const createPaymentIntent = async (req, res) => {
       metadata.currencyUsed = currency || 'GBP';
     }
 
-    // Find the user
-    const user = await User.findById(userId);
-    if (!user) {
-      console.log('Error: User not found');
-      return res.status(404).json({
+    // Declare user variable at this scope level
+    let user;
+    
+    // Find the user - validate ObjectId and add proper error handling
+    try {
+      // Ensure userId is a valid ObjectId
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        console.log('Error: Invalid user ID format');
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid user ID format'
+        });
+      }
+      
+      user = await User.findById(userId);
+      if (!user) {
+        console.log('Error: User not found');
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      
+      console.log('Found user:', user.email);
+      console.log('Amount (cents):', amount);
+
+    } catch (error) {
+      console.error('Error finding user:', error);
+      return res.status(500).json({
         success: false,
-        message: 'User not found'
+        message: 'Error finding user'
       });
     }
-
-    console.log('Found user:', user.email);
-    console.log('Amount (cents):', amount);
 
     // Create payment intent options
     const paymentIntentOptions = {
@@ -195,13 +226,36 @@ export const handleWebhook = async (req, res) => {
           // Generate a unique gift card code
           let code;
           let isUnique = false;
-          while (!isUnique) {
-            code = GiftCard.generateCode();
-            // Check if code already exists
-            const codeExists = await GiftCard.findOne({ code });
-            if (!codeExists) {
+          let attempts = 0;
+          const maxAttempts = 10;
+          
+          while (!isUnique && attempts < maxAttempts) {
+            try {
+              attempts++;
+              code = GiftCard.generateCode();
+              console.log(`Attempting to generate gift card code (attempt ${attempts}): ${code}`);
+              
+              // Check if code already exists
+              const codeExists = await GiftCard.findOne({ code });
+              if (!codeExists) {
+                isUnique = true;
+                console.log(`Generated unique gift card code: ${code}`);
+              } else {
+                console.log(`Code ${code} already exists, trying again...`);
+              }
+            } catch (codeErr) {
+              console.error('Error generating gift card code:', codeErr);
+              // Use a timestamp-based fallback code if generation fails
+              code = 'GC' + Date.now().toString().slice(-6);
               isUnique = true;
+              console.log(`Using fallback gift card code: ${code}`);
             }
+          }
+          
+          // If we couldn't generate a unique code after max attempts, use a timestamp-based code
+          if (!isUnique) {
+            code = 'GC' + Date.now().toString().slice(-6);
+            console.log(`Using timestamp-based gift card code after ${maxAttempts} attempts: ${code}`);
           }
           
           // Create the gift card
@@ -637,8 +691,12 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
   console.log('Confirming payment and provisioning package...');
   
   try {
-    const { paymentIntentId, packageId } = req.body;
+    // Accept giftCardDetails in the request body
+    const { paymentIntentId, packageId, giftCardDetails } = req.body;
     const userId = req.user._id;
+    
+    console.log('Request body:', req.body);
+    console.log('Gift card details:', giftCardDetails);
     
     if (!paymentIntentId || !packageId) {
       return res.status(400).json({
@@ -709,8 +767,80 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
         message: 'User not found'
       });
     }
+
+    // 6. Now that payment is confirmed, apply gift card if one was used
+    let giftCardApplied = null;
+    if (giftCardDetails && giftCardDetails.code) {
+      try {
+        console.log('Applying gift card after successful payment:', giftCardDetails.code);
+        const giftCard = await GiftCard.findOne({ code: giftCardDetails.code });
+        
+        if (giftCard) {
+          // Verify gift card has enough balance
+          const currentBalance = giftCard.getRemainingBalance();
+          if (currentBalance >= giftCardDetails.amountToUse) {
+            // Update gift card
+            giftCard.amountUsed += giftCardDetails.amountToUse;
+            
+            // If gift card is fully exhausted, mark it as redeemed
+            if (giftCard.getRemainingBalance() <= 0) {
+              giftCard.isRedeemed = true;
+              giftCard.redeemedAt = new Date();
+              giftCard.redeemedBy = userId;
+            }
+            
+            await giftCard.save();
+            giftCardApplied = {
+              code: giftCard.code,
+              amountUsed: giftCardDetails.amountToUse,
+              remainingBalance: giftCard.getRemainingBalance()
+            };
+            
+            // Send email notification about gift card usage
+            try {
+              // Get admin emails from environment variables
+              const adminEmails = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',') : [];
+              
+              // Send email to recipient
+              await sendEmail({
+                to: user.email,
+                subject: 'Gift Card Applied to Purchase',
+                text: `Your gift card (${giftCard.code}) has been applied to your purchase. 
+                Amount used: ${giftCardDetails.amountToUse} ${giftCard.currency}
+                Remaining balance: ${giftCard.getRemainingBalance()} ${giftCard.currency}
+                Thank you for your purchase!`
+              });
+              
+              // Send email to all admins
+              for (const adminEmail of adminEmails) {
+                await sendEmail({
+                  to: adminEmail.trim(),
+                  subject: 'Gift Card Redemption Notification',
+                  text: `A gift card has been applied to a purchase.
+                  Gift Card: ${giftCard.code}
+                  User: ${user.name} (${user.email})
+                  Package: ${packageId}
+                  Amount Used: ${giftCardDetails.amountToUse} ${giftCard.currency}
+                  Remaining Balance: ${giftCard.getRemainingBalance()} ${giftCard.currency}`
+                });
+              }
+            } catch (emailError) {
+              console.error('Error sending gift card email notification:', emailError);
+              // Don't fail the request if email sending fails
+            }
+          } else {
+            console.error('Gift card balance insufficient at time of payment confirmation');
+          }
+        } else {
+          console.error('Gift card not found at time of payment confirmation');
+        }
+      } catch (giftCardError) {
+        console.error('Error applying gift card during payment confirmation:', giftCardError);
+        // Continue with the purchase even if gift card application fails
+      }
+    }
     
-    // 6. Clean up - Set previous packages to inactive
+    // 7. Clean up - Set previous packages to inactive
     if (user.packageType !== 'none' && user.activePackageId) {
       console.log(`User ${userId} already has an active package. Cleaning up before assigning new package.`);
       await UserPackage.updateMany(
@@ -719,18 +849,18 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
       );
     }
     
-    // 7. Calculate expiry date
+    // 8. Calculate expiry date
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + package_.durationDays);
     
-    // 8. Get price and currency information from payment intent metadata
+    // 9. Get price and currency information from payment intent metadata
     // Use the converted price and currency if available, otherwise fallback to package price in GBP
     const packagePrice = metadata.convertedPrice ? parseFloat(metadata.convertedPrice) : package_.price;
     const currency = metadata.currencyUsed || 'GBP';
     
     console.log(`Using price ${packagePrice} ${currency} for package ${package_._id}`);
     
-    // 9. Create a new user package
+    // 10. Create a new user package
     const userPackage = new UserPackage({
       user: userId,
       package: packageId,
@@ -742,17 +872,21 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
       paymentId: paymentIntentId,
       stripePaymentIntentId: paymentIntentId,
       paymentStatus: 'completed',
-      isActive: true
+      isActive: true,
+      giftCardApplied: giftCardApplied ? {
+        code: giftCardApplied.code,
+        amountUsed: giftCardApplied.amountUsed
+      } : null
     });
     
     await userPackage.save();
     console.log('User package created:', userPackage._id);
     
-    // 10. Update user's package type and reference to active package
+    // 11. Update user's package type and reference to active package
     user.packageType = package_.type;
     user.activePackageId = userPackage._id;
     
-    // 11. If user has a questionnaire, update the selectedPackage info
+    // 12. If user has a questionnaire, update the selectedPackage info
     if (user.healthQuestionnaire) {
       user.healthQuestionnaire.selectedPackage = {
         packageId: packageId,
@@ -763,7 +897,7 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
     await user.save();
     console.log('User updated with new package');
     
-    // 12. Generate prescription if user has filled out a health questionnaire
+    // 13. Generate prescription if user has filled out a health questionnaire
     let prescriptionResult = null;
     if (user.healthQuestionnaire) {
       try {
@@ -787,12 +921,32 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
     console.log('User package created. Sending confirmation emails...');
     
     // Send payment confirmation email to user
-    sendPaymentConfirmation(user, package_, { id: paymentIntentId }).catch(err => {
+    sendEmail({
+      to: user.email,
+      subject: 'Payment Confirmation',
+      html: `
+        <h1>Payment Confirmation</h1>
+        <p>Your payment for package ${package_.name} has been confirmed.</p>
+        <p>Package Type: ${package_.type}</p>
+        <p>Expiry Date: ${expiryDate.toLocaleDateString()}</p>
+        <p>Amount: ${packagePrice} ${currency}</p>
+      `
+    }).catch(err => {
       console.error('Error sending payment confirmation email:', err);
     });
     
     // Send notification to admin
-    sendPaymentNotificationToAdmin(user, package_, { id: paymentIntentId }).catch(err => {
+    sendEmail({
+      to: process.env.ADMIN_EMAIL,
+      subject: 'New Payment Confirmation',
+      html: `
+        <h1>New Payment Confirmation</h1>
+        <p>User ${user.name} has confirmed a payment for package ${package_.name}.</p>
+        <p>Package Type: ${package_.type}</p>
+        <p>Expiry Date: ${expiryDate.toLocaleDateString()}</p>
+        <p>Amount: ${packagePrice} ${currency}</p>
+      `
+    }).catch(err => {
       console.error('Error sending payment notification to admin:', err);
     });
     
@@ -853,13 +1007,36 @@ export const confirmPaymentAndCreateGiftCard = async (req, res) => {
     // Generate a unique gift card code
     let code;
     let isUnique = false;
-    while (!isUnique) {
-      code = GiftCard.generateCode();
-      // Check if code already exists
-      const existingGiftCard = await GiftCard.findOne({ code });
-      if (!existingGiftCard) {
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    while (!isUnique && attempts < maxAttempts) {
+      try {
+        attempts++;
+        code = GiftCard.generateCode();
+        console.log(`Attempting to generate gift card code (attempt ${attempts}): ${code}`);
+        
+        // Check if code already exists
+        const existingGiftCard = await GiftCard.findOne({ code });
+        if (!existingGiftCard) {
+          isUnique = true;
+          console.log(`Generated unique gift card code: ${code}`);
+        } else {
+          console.log(`Code ${code} already exists, trying again...`);
+        }
+      } catch (codeErr) {
+        console.error('Error generating gift card code:', codeErr);
+        // Use a timestamp-based fallback code if generation fails
+        code = 'GC' + Date.now().toString().slice(-6);
         isUnique = true;
+        console.log(`Using fallback gift card code: ${code}`);
       }
+    }
+    
+    // If we couldn't generate a unique code after max attempts, use a timestamp-based code
+    if (!isUnique) {
+      code = 'GC' + Date.now().toString().slice(-6);
+      console.log(`Using timestamp-based gift card code after ${maxAttempts} attempts: ${code}`);
     }
     
     // Create the gift card
@@ -982,6 +1159,125 @@ export const confirmGiftCard = async (req, res) => {
       success: false,
       message: 'An error occurred while confirming gift card payment',
       error: error.message
+    });
+  }
+};
+
+// Update an existing payment intent (e.g., when applying a gift card)
+export const updatePaymentIntent = async (req, res) => {
+  console.log('Updating payment intent...');
+  console.log('Request body:', req.body);
+  
+  try {
+    const { paymentIntentId, amount, currency } = req.body;
+    
+    // Validate that user exists in request object
+    if (!req.user || !req.user._id) {
+      console.log('Error: User not authenticated or missing user ID');
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+    
+    const userId = req.user._id;
+
+    console.log('Payment Intent ID:', paymentIntentId);
+    console.log('New Amount:', amount);
+    console.log('Currency:', currency);
+    console.log('User ID:', userId);
+
+    // Validate input
+    if (!paymentIntentId || amount === undefined || !currency) {
+      console.log('Error: Missing required fields');
+      return res.status(400).json({
+        success: false,
+        message: 'Payment intent ID, amount, and currency are required'
+      });
+    }
+
+    // Find the user - validate ObjectId and add proper error handling
+    try {
+      // Ensure userId is a valid ObjectId
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        console.log('Error: Invalid user ID format');
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid user ID format'
+        });
+      }
+      
+      const user = await User.findById(userId);
+      if (!user) {
+        console.log('Error: User not found');
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+    } catch (error) {
+      console.error('Error finding user:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error finding user'
+      });
+    }
+
+    // Retrieve the payment intent to verify it belongs to this user
+    const existingPaymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    // Verify the payment intent belongs to this user
+    if (existingPaymentIntent.metadata.userId !== userId.toString()) {
+      console.log('Error: Payment intent does not belong to this user');
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to payment intent'
+      });
+    }
+
+    // Calculate the new amount in cents
+    const amountInCents = Math.round(amount * 100);
+    
+    // Check if the amount is zero (fully covered by gift card)
+    if (amountInCents <= 0) {
+      // For a zero amount, we can't update the payment intent
+      // Instead, we'll confirm it directly without capturing payment
+      const confirmedIntent = await stripe.paymentIntents.confirm(
+        paymentIntentId,
+        { payment_method: 'pm_card_visa' } // This is a test payment method that works for zero-amount confirmations
+      );
+      
+      console.log('Zero-amount payment intent confirmed:', confirmedIntent.id);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Payment intent confirmed with zero amount',
+        clientSecret: confirmedIntent.client_secret
+      });
+    }
+
+    // Update the payment intent with new amount
+    console.log('Updating payment intent with new amount:', amountInCents);
+    const updatedPaymentIntent = await stripe.paymentIntents.update(
+      paymentIntentId,
+      {
+        amount: amountInCents,
+        currency: currency.toLowerCase()
+      }
+    );
+
+    console.log('Payment intent updated:', updatedPaymentIntent.id);
+
+    // Return the updated client secret to the frontend
+    return res.status(200).json({
+      success: true,
+      clientSecret: updatedPaymentIntent.client_secret
+    });
+  } catch (error) {
+    console.error('Error updating payment intent:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error updating payment intent'
     });
   }
 }; 

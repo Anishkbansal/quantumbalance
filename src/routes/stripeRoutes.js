@@ -9,7 +9,8 @@ import {
   updateBillingDetails,
   getBillingDetails,
   confirmPaymentAndProvisionPackage,
-  confirmPaymentAndCreateGiftCard
+  confirmPaymentAndCreateGiftCard,
+  updatePaymentIntent
 } from '../controllers/stripeController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -17,6 +18,9 @@ const router = express.Router();
 
 // Create a payment intent for purchasing a package
 router.post('/create-payment-intent', protect, createPaymentIntent);
+
+// Update an existing payment intent (e.g., when applying gift card)
+router.post('/update-payment-intent', protect, updatePaymentIntent);
 
 // Confirm payment and provision package
 router.post('/confirm-payment', protect, confirmPaymentAndProvisionPackage);
