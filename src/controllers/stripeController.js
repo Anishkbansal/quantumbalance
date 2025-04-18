@@ -25,7 +25,7 @@ export const createPaymentIntent = async (req, res) => {
   console.log('Request body:', req.body);
   
   try {
-    const { packageId, setupFutureUsage, countryCode, useExistingPaymentMethod, currency } = req.body;
+    const { packageId, setupFutureUsage, countryCode, useExistingPaymentMethod, currency, convertedPrice } = req.body;
     const userId = req.user._id;
 
     console.log('Package ID:', packageId);
@@ -33,6 +33,7 @@ export const createPaymentIntent = async (req, res) => {
     console.log('Country Code:', countryCode);
     console.log('Using existing payment method:', useExistingPaymentMethod);
     console.log('Currency:', currency);
+    console.log('Converted Price:', convertedPrice);
 
     // Validate input
     if (!packageId) {
@@ -66,20 +67,36 @@ export const createPaymentIntent = async (req, res) => {
       metadata.giftCardCurrency = currency || 'GBP';
     } else {
       // Find the package for regular package purchases
-    const package_ = await Package.findById(packageId);
-    if (!package_) {
-      console.log('Error: Package not found');
-      return res.status(404).json({
-        success: false,
-        message: 'Package not found'
-      });
-    }
+      const package_ = await Package.findById(packageId);
+      if (!package_) {
+        console.log('Error: Package not found');
+        return res.status(404).json({
+          success: false,
+          message: 'Package not found'
+        });
+      }
 
-    console.log('Found package:', package_.name);
-      amount = Math.round(package_.price * 100); // Convert to cents
+      console.log('Found package:', package_.name);
+      
+      // Use converted price if provided, otherwise use the package price
+      if (convertedPrice !== undefined) {
+        // Using the converted price from the request - ensures consistency with UI display
+        amount = Math.round(convertedPrice * 100); // Convert to cents
+        console.log('Using converted price:', convertedPrice);
+      } else {
+        // Fallback to package price (in GBP)
+        amount = Math.round(package_.price * 100); // Convert to cents
+        console.log('Using package base price:', package_.price);
+      }
+      
       metadata.packageId = packageId.toString();
       metadata.packageType = package_.type;
       metadata.packageName = package_.name;
+      
+      // Store pricing information in metadata
+      metadata.originalPrice = package_.price;
+      metadata.convertedPrice = convertedPrice || package_.price;
+      metadata.currencyUsed = currency || 'GBP';
     }
 
     // Find the user
@@ -659,27 +676,22 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
     });
     
     if (existingPackage) {
-      console.log('Payment already processed. Returning existing package.');
-      // Payment has already been processed, return success with existing data
-      const user = await User.findById(userId);
-      
+      console.log('Payment has already been processed:', existingPackage._id);
       return res.status(200).json({
         success: true,
-        message: 'Package already provisioned for this payment',
+        message: 'Payment already processed',
         data: {
-          userPackage: existingPackage,
-          user: {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            packageType: user.packageType,
-            activePackageId: user.activePackageId
-          }
+          user: await User.findById(userId).select('-password'),
+          package: existingPackage
         }
       });
     }
     
-    // 4. Find the package
+    // 4. Retrieve metadata from payment intent
+    const metadata = paymentIntent.metadata || {};
+    console.log('Payment metadata:', metadata);
+    
+    // 5. Find the package and user
     const package_ = await Package.findById(packageId);
     if (!package_) {
       console.error('Package not found');
@@ -689,7 +701,6 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
       });
     }
     
-    // 5. Find the user
     const user = await User.findById(userId);
     if (!user) {
       console.error('User not found');
@@ -712,13 +723,21 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + package_.durationDays);
     
-    // 8. Create a new user package
+    // 8. Get price and currency information from payment intent metadata
+    // Use the converted price and currency if available, otherwise fallback to package price in GBP
+    const packagePrice = metadata.convertedPrice ? parseFloat(metadata.convertedPrice) : package_.price;
+    const currency = metadata.currencyUsed || 'GBP';
+    
+    console.log(`Using price ${packagePrice} ${currency} for package ${package_._id}`);
+    
+    // 9. Create a new user package
     const userPackage = new UserPackage({
       user: userId,
       package: packageId,
       packageType: package_.type,
       expiryDate,
-      price: package_.price,
+      price: packagePrice,
+      currency: currency, // Use the currency from the payment intent
       paymentMethod: 'credit_card',
       paymentId: paymentIntentId,
       stripePaymentIntentId: paymentIntentId,
@@ -729,11 +748,11 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
     await userPackage.save();
     console.log('User package created:', userPackage._id);
     
-    // 9. Update user's package type and reference to active package
+    // 10. Update user's package type and reference to active package
     user.packageType = package_.type;
     user.activePackageId = userPackage._id;
     
-    // 10. If user has a questionnaire, update the selectedPackage info
+    // 11. If user has a questionnaire, update the selectedPackage info
     if (user.healthQuestionnaire) {
       user.healthQuestionnaire.selectedPackage = {
         packageId: packageId,
@@ -744,7 +763,7 @@ export const confirmPaymentAndProvisionPackage = async (req, res) => {
     await user.save();
     console.log('User updated with new package');
     
-    // 11. Generate prescription if user has filled out a health questionnaire
+    // 12. Generate prescription if user has filled out a health questionnaire
     let prescriptionResult = null;
     if (user.healthQuestionnaire) {
       try {

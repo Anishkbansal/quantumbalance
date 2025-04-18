@@ -10,6 +10,8 @@ import { loadStripe } from '@stripe/stripe-js';
 import StripePayment from '../components/payment/StripePayment';
 import { API_URL } from '../config/constants';
 import { toast } from 'react-hot-toast';
+import { useCurrency } from '../contexts/CurrencyContext';
+import { formatCurrency } from '../utils/formatters';
 
 // Get publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || '';
@@ -36,6 +38,7 @@ const HealthQuestionnaire = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, updateUser } = useAuth();
+  const { convertPrice } = useCurrency();
   
   // Redirect if user is not authenticated
   useEffect(() => {
@@ -76,6 +79,7 @@ const HealthQuestionnaire = () => {
   const [packageType, setPackageType] = useState<string | null>(location.state?.packageType || null);
   const [packageName, setPackageName] = useState<string | null>(location.state?.packageName || null);
   const [packagePrice, setPackagePrice] = useState<number | null>(location.state?.packagePrice || null);
+  const [currency, setCurrency] = useState<string | null>(location.state?.currency || 'GBP');
   
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [hasExistingQuestionnaire, setHasExistingQuestionnaire] = useState(false);
@@ -473,7 +477,15 @@ const HealthQuestionnaire = () => {
   // Function to render the review summary
   const renderReviewSummary = () => {
     const getPackageName = () => packageName || 'Unknown Package';
-    const getPackagePrice = () => packagePrice ? `$${packagePrice}` : '$0';
+    
+    const getPackagePrice = () => {
+      if (!packagePrice) return 'Free';
+      
+      // Convert price to selected currency and format it
+      const convertedPrice = currency === 'GBP' ? packagePrice : convertPrice(packagePrice);
+      return formatCurrency(convertedPrice, currency || 'GBP');
+    };
+
     const getPackageDuration = () => {
       if (!packageType) return 'Unknown';
       
@@ -647,38 +659,46 @@ const HealthQuestionnaire = () => {
   };
 
   // Function to render the payment form
-  const renderPaymentForm = () => (
-    <div className="space-y-6">
-      <div className="bg-navy-800 p-6 rounded-lg border border-navy-700">
-        <div className="flex items-center mb-4">
-          <Package className="text-gold-500 w-6 h-6 mr-2" />
-          <h2 className="text-xl font-semibold text-white">Complete Your Purchase</h2>
-        </div>
-        
-        <div className="flex items-center justify-between p-4 bg-navy-700/60 rounded-lg mb-6">
-          <div>
-            <p className="text-gray-300 text-sm">Selected Package:</p>
-            <p className="text-white font-medium">{packageName}</p>
+  const renderPaymentForm = () => {
+    // Convert price to selected currency and format it
+    const formattedPrice = packagePrice 
+      ? formatCurrency(currency === 'GBP' ? packagePrice : convertPrice(packagePrice), currency || 'GBP')
+      : '$0';
+      
+    return (
+      <div className="space-y-6">
+        <div className="bg-navy-800 p-6 rounded-lg border border-navy-700">
+          <div className="flex items-center mb-4">
+            <Package className="text-gold-500 w-6 h-6 mr-2" />
+            <h2 className="text-xl font-semibold text-white">Complete Your Purchase</h2>
           </div>
-          <div>
-            <p className="text-gray-300 text-sm">Price:</p>
-            <p className="text-gold-400 font-bold">${packagePrice}</p>
+          
+          <div className="flex items-center justify-between p-4 bg-navy-700/60 rounded-lg mb-6">
+            <div>
+              <p className="text-gray-300 text-sm">Selected Package:</p>
+              <p className="text-white font-medium">{packageName}</p>
+            </div>
+            <div>
+              <p className="text-gray-300 text-sm">Price:</p>
+              <p className="text-gold-400 font-bold">{formattedPrice}</p>
+            </div>
           </div>
+          
+          <Elements stripe={stripePromise}>
+            <StripePayment
+              packageId={packageId || ''}
+              packageName={packageName || ''}
+              packagePrice={packagePrice || 0}
+              currency={currency || 'GBP'}
+              onPaymentSuccess={handlePaymentSuccess}
+              onPaymentError={handlePaymentError}
+              onCancel={handleCancelPayment}
+            />
+          </Elements>
         </div>
-        
-        <Elements stripe={stripePromise}>
-          <StripePayment
-            packageId={packageId || ''}
-            packageName={packageName || ''}
-            packagePrice={packagePrice || 0}
-            onPaymentSuccess={handlePaymentSuccess}
-            onPaymentError={handlePaymentError}
-            onCancel={handleCancelPayment}
-          />
-        </Elements>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Payment success screen
   const renderPaymentSuccess = () => (

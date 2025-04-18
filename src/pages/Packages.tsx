@@ -367,6 +367,7 @@ export default function Packages() {
                     packageId={selectedPackage._id}
                     packageName={selectedPackage.name}
                     packagePrice={selectedPackage.price}
+                    currency={currency.code}
                     onPaymentSuccess={() => {}}
                     onPaymentError={handlePaymentError}
                     onCancel={handleCancelPayment}

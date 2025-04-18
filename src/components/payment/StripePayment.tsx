@@ -83,10 +83,20 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   const stripe = useStripe();
   const elements = useElements();
   const navigate = useNavigate();
-  const { currency: contextCurrency } = useCurrency();
+  const { currency: contextCurrency, convertPrice } = useCurrency();
   
   // Use the currency from props if provided, otherwise use the one from context
   const currency = propCurrency || contextCurrency.code;
+  
+  // Calculate the converted price for this package (from GBP to selected currency)
+  const convertedPrice = React.useMemo(() => {
+    // For gift cards, use the price directly as it's already in the selected currency
+    if (packageId === 'gift-card') {
+      return packagePrice;
+    }
+    // For regular packages, convert from GBP to selected currency
+    return Math.round(convertPrice(packagePrice));
+  }, [packageId, packagePrice, convertPrice, currency]);
   
   const [loading, setLoading] = useState(false);
   const [clientSecret, setClientSecret] = useState<string>('');
@@ -98,8 +108,8 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | null>(null);
   
-  // New state for manual payment
-  const [isManualPayment, setIsManualPayment] = useState(false);
+  // Active tab state
+  const [activeTab, setActiveTab] = useState<'saved' | 'new'>('saved');
   
   // Current selected country
   const [selectedCountry, setSelectedCountry] = useState<CountryData | null>(null);
@@ -143,7 +153,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
   };
   
   // Format price as currency
-  const formattedPrice = formatCurrency(packagePrice, currency);
+  const formattedPrice = formatCurrency(convertedPrice, currency);
   
   // Fetch user's saved payment methods on component mount
   useEffect(() => {
@@ -162,21 +172,27 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         );
         
         if (response.data.success) {
-          setPaymentMethods(response.data.paymentMethods || []);
+          const methods = response.data.paymentMethods || [];
+          setPaymentMethods(methods);
           
           // If there are payment methods and there's a default one, select it
-          const defaultMethod = response.data.paymentMethods?.find((pm: PaymentMethod) => pm.isDefault);
+          const defaultMethod = methods.find((pm: PaymentMethod) => pm.isDefault);
           if (defaultMethod) {
             setSelectedPaymentMethodId(defaultMethod.id);
-          } else if (response.data.paymentMethods?.length > 0) {
-            setSelectedPaymentMethodId(response.data.paymentMethods[0].id);
+          } else if (methods.length > 0) {
+            setSelectedPaymentMethodId(methods[0].id);
+          }
+          
+          // Set the active tab based on available methods
+          if (methods.length === 0) {
+            setActiveTab('new');
           }
           
           // Fetch billing details after getting payment methods
           await fetchBillingDetails();
           
           // Create payment intent after fetching payment methods and billing details
-          await createPaymentIntent(response.data.paymentMethods || []);
+          await createPaymentIntent(methods);
         } else {
           setError(response.data.message || 'Could not retrieve payment methods');
         }
@@ -229,12 +245,14 @@ const StripePayment: React.FC<StripePaymentProps> = ({
       const requestPayload: any = { 
         packageId,
         countryCode: billingDetails.address.country,
-        useExistingPaymentMethod: methods.length > 0 && !isManualPayment,
-        currency
+        useExistingPaymentMethod: methods.length > 0 && activeTab !== 'new',
+        currency,
+        convertedPrice: convertedPrice  // Send the converted price to the server
       };
       
       // For gift cards, include additional data
       if (packageId === 'gift-card') {
+        // For gift cards, use packagePrice directly as it's already in the selected currency
         requestPayload.amount = packagePrice;
         
         // Add recipient data from additionalData if available
@@ -301,7 +319,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
   
-  // Update handlePaymentSubmit to handle manual payment
+  // Update handlePaymentSubmit to handle the active tab
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -309,15 +327,15 @@ const StripePayment: React.FC<StripePaymentProps> = ({
       return;
     }
     
-    if (!isManualPayment && !selectedPaymentMethodId) {
-      setError('Please select a payment method or enter new card details.');
+    if (activeTab === 'saved' && !selectedPaymentMethodId) {
+      setError('Please select a payment method or switch to the "Add New Card" tab.');
       return;
     }
     
     setShowConfirmDialog(true);
   };
   
-  // Update processPayment to handle manual payment
+  // Update processPayment to handle the active tab
   const processPayment = async () => {
     if (!stripe || !clientSecret) {
       return;
@@ -329,7 +347,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     try {
       let result;
       
-      if (isManualPayment) {
+      if (activeTab === 'new') {
         // For manual payment with new card
         const cardElement = elements?.getElement(CardElement);
         
@@ -406,97 +424,6 @@ const StripePayment: React.FC<StripePaymentProps> = ({
     }
   };
 
-  // Toggle between saved payment methods and manual payment
-  const togglePaymentMode = () => {
-    setIsManualPayment(prev => !prev);
-    if (!isManualPayment) {
-      setSelectedPaymentMethodId(null);
-    }
-  };
-
-  // Handle card submission
-  const handleSubmitCard = async () => {
-    if (!stripe || !elements) {
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Get CardElement
-      const cardElement = elements.getElement(CardElement);
-      
-      if (!cardElement) {
-        throw new Error('Card element not found');
-      }
-      
-      // Confirm payment with Stripe
-      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: cardElement,
-          billing_details: {
-            name: billingDetails.name,
-            email: billingDetails.email,
-            phone: billingDetails.phone,
-            address: {
-              city: billingDetails.address.city,
-              country: billingDetails.address.country,
-              line1: billingDetails.address.line1,
-              line2: billingDetails.address.line2,
-              postal_code: billingDetails.address.postal_code,
-              state: billingDetails.address.state,
-            },
-          },
-        },
-      });
-      
-      if (error) {
-        throw new Error(error.message || 'Payment failed');
-      }
-      
-      if (paymentIntent?.status === 'succeeded') {
-        console.log('Payment successful:', paymentIntent.id);
-        
-        // For gift cards, we'll handle the creation in the parent component
-        if (packageId === 'gift-card') {
-          onPaymentSuccess(paymentIntent.id);
-          return;
-        }
-        
-        // For packages, call the API to confirm and provision
-        const token = localStorage.getItem('token');
-        const response = await axios.post(
-          `${API_URL}/stripe/confirm-payment`,
-          { 
-            paymentIntentId: paymentIntent.id,
-            packageId
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-        
-        if (response.data.success) {
-          onPaymentSuccess(paymentIntent.id);
-        } else {
-          throw new Error(response.data.message || 'Error confirming payment');
-        }
-      } else {
-        throw new Error('Payment was not completed successfully');
-      }
-    } catch (err: any) {
-      console.error('Payment error:', err);
-      setError(err.message || 'There was an error processing your payment');
-      onPaymentError(err.message || 'There was an error processing your payment');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="bg-navy-800 border border-navy-700 rounded-xl shadow-lg overflow-hidden">
       <div className="p-4 md:p-6">
@@ -520,18 +447,37 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         )}
         
         <form onSubmit={handlePaymentSubmit} className="space-y-5">
-          {/* Payment Method Toggle */}
+          {/* Payment Method Tabs */}
           <div className="bg-navy-700/30 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-4 border-b border-navy-600 pb-2">
-              <h4 className="text-white text-sm font-medium">Payment Method</h4>
+            <div className="mb-4">
+              <h4 className="text-white text-sm font-medium border-b border-navy-600 pb-2">Payment Method</h4>
+              
+              {/* Tabs */}
               {paymentMethods.length > 0 && (
-                <button
-                  type="button"
-                  onClick={togglePaymentMode}
-                  className="text-sm text-gold-400 hover:text-gold-300 transition-colors"
-                >
-                  {isManualPayment ? 'Use Saved Method' : 'Enter Card Details'}
-                </button>
+                <div className="flex mt-3 border-b border-navy-600">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('saved')}
+                    className={`py-2 px-4 ${
+                      activeTab === 'saved' 
+                        ? 'text-gold-400 border-b-2 border-gold-400 font-medium' 
+                        : 'text-navy-300 hover:text-white'
+                    }`}
+                  >
+                    Saved Cards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('new')}
+                    className={`py-2 px-4 ${
+                      activeTab === 'new' 
+                        ? 'text-gold-400 border-b-2 border-gold-400 font-medium' 
+                        : 'text-navy-300 hover:text-white'
+                    }`}
+                  >
+                    Add New Card
+                  </button>
+                </div>
               )}
             </div>
             
@@ -539,254 +485,242 @@ const StripePayment: React.FC<StripePaymentProps> = ({
               <div className="flex justify-center py-4">
                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gold-500"></div>
               </div>
-            ) : !isManualPayment ? (
-              /* Saved Payment Methods Section */
-              paymentMethods.length === 0 ? (
-                <div className="text-center py-6 bg-navy-800/50 rounded-lg">
-                  <CreditCard size={36} className="mx-auto mb-3 text-navy-500" />
-                  <h3 className="text-base font-medium text-navy-300 mb-2">No Payment Methods Found</h3>
-                  <p className="text-navy-400 text-sm mb-4 max-w-xs mx-auto">
-                    You need to add a payment method or enter your card details below.
-                  </p>
-                  <Button 
-                    onClick={() => setIsManualPayment(true)}
-                    variant="primary"
-                  >
-                    Enter Card Details
-                    <ArrowRight size={16} className="ml-1" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {paymentMethods.map((method) => (
-                    <motion.div
-                      key={method.id}
-                      variants={cardVariants}
-                      className={`bg-navy-700/80 rounded-lg p-3 flex justify-between items-center cursor-pointer ${
-                        selectedPaymentMethodId === method.id 
-                          ? 'border-2 border-gold-500/70' 
-                          : 'border border-navy-600 hover:border-gold-500/30'
-                      }`}
-                      onClick={() => setSelectedPaymentMethodId(method.id)}
-                      whileHover={{ scale: 1.01 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <div className="flex items-center">
-                        <div className={`w-10 h-8 mr-3 flex items-center justify-center rounded-md ${
-                          method.isDefault ? 'bg-gold-500/10' : 'bg-navy-600'
-                        }`}>
-                          <CreditCard size={20} className={method.isDefault ? 'text-gold-500' : 'text-white'} />
+            ) : (
+              <>
+                {/* Saved Cards Tab Content */}
+                {activeTab === 'saved' && paymentMethods.length > 0 ? (
+                  <div className="space-y-3">
+                    {paymentMethods.map((method) => (
+                      <motion.div
+                        key={method.id}
+                        variants={cardVariants}
+                        className={`bg-navy-700/80 rounded-lg p-3 flex justify-between items-center cursor-pointer ${
+                          selectedPaymentMethodId === method.id 
+                            ? 'border-2 border-gold-500/70' 
+                            : 'border border-navy-600 hover:border-gold-500/30'
+                        }`}
+                        onClick={() => setSelectedPaymentMethodId(method.id)}
+                        whileHover={{ scale: 1.01 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <div className="flex items-center">
+                          <div className={`w-10 h-8 mr-3 flex items-center justify-center rounded-md ${
+                            method.isDefault ? 'bg-gold-500/10' : 'bg-navy-600'
+                          }`}>
+                            <CreditCard size={20} className={method.isDefault ? 'text-gold-500' : 'text-white'} />
+                          </div>
+                          
+                          <div>
+                            <div className="text-white text-sm font-medium flex items-center">
+                              {formatCardBrand(method.brand)} •••• {method.last4}
+                              {method.isDefault && (
+                                <span className="ml-2 text-xs py-0.5 px-2 bg-gold-500/20 text-gold-400 rounded-full flex items-center">
+                                  <CheckCircle size={10} className="mr-1" />
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-navy-400 text-xs">
+                              Expires {method.expMonth}/{method.expYear}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {selectedPaymentMethodId === method.id && (
+                          <div className="w-5 h-5 rounded-full bg-gold-500 flex items-center justify-center">
+                            <CheckCircle size={14} className="text-navy-900" />
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : activeTab === 'new' || paymentMethods.length === 0 ? (
+                  /* New Card Tab Content */
+                  <div className="space-y-5">
+                    <div className="p-3 bg-navy-800/70 rounded-lg border border-navy-600">
+                      <div className="mb-4">
+                        <label htmlFor="card-element" className="block text-sm font-medium text-gray-300 mb-1">
+                          Use other Card
+                        </label>
+                        <div className="bg-navy-700 p-3 rounded-md border border-navy-600 focus-within:border-gold-500">
+                          <CardElement 
+                            options={{
+                              style: {
+                                base: {
+                                  color: '#fff',
+                                  fontFamily: '"Inter", sans-serif',
+                                  fontSize: '16px',
+                                  '::placeholder': {
+                                    color: '#64748b',
+                                  },
+                                },
+                                invalid: {
+                                  color: '#f87171',
+                                },
+                              },
+                              hidePostalCode: true,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Billing Details Form */}
+                    <div className="bg-navy-800/70 rounded-lg border border-navy-600 p-4">
+                      <h4 className="text-white text-sm font-medium mb-4 border-b border-navy-600 pb-2">
+                        Billing Information
+                      </h4>
+                      
+                      <div className="space-y-4">
+                        {/* Personal Information */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="name" className="block text-gray-300 text-xs mb-1">
+                              Full Name <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              id="name"
+                              name="name"
+                              type="text"
+                              value={billingDetails.name}
+                              onChange={handleBillingInputChange}
+                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="email" className="block text-gray-300 text-xs mb-1">
+                              Email <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              id="email"
+                              name="email"
+                              type="email"
+                              value={billingDetails.email}
+                              onChange={handleBillingInputChange}
+                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                              required
+                            />
+                          </div>
                         </div>
                         
                         <div>
-                          <div className="text-white text-sm font-medium flex items-center">
-                            {formatCardBrand(method.brand)} •••• {method.last4}
-                            {method.isDefault && (
-                              <span className="ml-2 text-xs py-0.5 px-2 bg-gold-500/20 text-gold-400 rounded-full flex items-center">
-                                <CheckCircle size={10} className="mr-1" />
-                                Default
-                              </span>
-                            )}
+                          <label htmlFor="phone" className="block text-gray-300 text-xs mb-1">
+                            Phone Number
+                          </label>
+                          <input
+                            id="phone"
+                            name="phone"
+                            type="tel"
+                            value={billingDetails.phone}
+                            onChange={handleBillingInputChange}
+                            className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          />
+                        </div>
+                        
+                        {/* Address Information */}
+                        <div>
+                          <label htmlFor="address.line1" className="block text-gray-300 text-xs mb-1">
+                            Address Line 1 <span className="text-red-400">*</span>
+                          </label>
+                          <input
+                            id="address.line1"
+                            name="address.line1"
+                            type="text"
+                            value={billingDetails.address.line1}
+                            onChange={handleBillingInputChange}
+                            className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                            required
+                          />
+                        </div>
+                        
+                        <div>
+                          <label htmlFor="address.line2" className="block text-gray-300 text-xs mb-1">
+                            Address Line 2
+                          </label>
+                          <input
+                            id="address.line2"
+                            name="address.line2"
+                            type="text"
+                            value={billingDetails.address.line2 || ''}
+                            onChange={handleBillingInputChange}
+                            className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="address.country" className="block text-gray-300 text-xs mb-1">
+                              Country <span className="text-red-400">*</span>
+                            </label>
+                            <select
+                              id="address.country"
+                              name="address.country"
+                              value={billingDetails.address.country}
+                              onChange={handleBillingInputChange}
+                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                              required
+                            >
+                              {COUNTRIES.map(country => (
+                                <option key={country.code} value={country.code}>
+                                  {country.name}
+                                </option>
+                              ))}
+                            </select>
                           </div>
-                          <div className="text-navy-400 text-xs">
-                            Expires {method.expMonth}/{method.expYear}
+                          <div>
+                            <label htmlFor="address.postal_code" className="block text-gray-300 text-xs mb-1">
+                              {selectedCountry?.postalCodeLabel || 'Postal Code'} <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              id="address.postal_code"
+                              name="address.postal_code"
+                              type="text"
+                              value={billingDetails.address.postal_code}
+                              onChange={handleBillingInputChange}
+                              placeholder={selectedCountry?.postalCodePlaceholder}
+                              pattern={selectedCountry?.postalCodePattern}
+                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                              required
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="address.city" className="block text-gray-300 text-xs mb-1">
+                              City <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              id="address.city"
+                              name="address.city"
+                              type="text"
+                              value={billingDetails.address.city}
+                              onChange={handleBillingInputChange}
+                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="address.state" className="block text-gray-300 text-xs mb-1">
+                              State/Province <span className="text-red-400">*</span>
+                            </label>
+                            <input
+                              id="address.state"
+                              name="address.state"
+                              type="text"
+                              value={billingDetails.address.state}
+                              onChange={handleBillingInputChange}
+                              className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
+                              required
+                            />
                           </div>
                         </div>
                       </div>
-                      
-                      {selectedPaymentMethodId === method.id && (
-                        <div className="w-5 h-5 rounded-full bg-gold-500 flex items-center justify-center">
-                          <CheckCircle size={14} className="text-navy-900" />
-                        </div>
-                      )}
-                    </motion.div>
-                  ))}
-                </div>
-              )
-            ) : (
-              /* Manual Payment Form */
-              <div className="space-y-5">
-                <div className="p-3 bg-navy-800/70 rounded-lg border border-navy-600">
-                  <div className="mb-4">
-                    <label htmlFor="card-element" className="block text-sm font-medium text-gray-300 mb-1">
-                      Card Details
-                    </label>
-                    <div className="bg-navy-700 p-3 rounded-md border border-navy-600 focus-within:border-gold-500">
-                      <CardElement 
-                        options={{
-                          style: {
-                            base: {
-                              color: '#fff',
-                              fontFamily: '"Inter", sans-serif',
-                              fontSize: '16px',
-                              '::placeholder': {
-                                color: '#64748b',
-                              },
-                            },
-                            invalid: {
-                              color: '#f87171',
-                            },
-                          },
-                        }}
-                      />
                     </div>
                   </div>
-                </div>
-
-                {/* Billing Details Form */}
-                <div className="bg-navy-800/70 rounded-lg border border-navy-600 p-4">
-                  <h4 className="text-white text-sm font-medium mb-4 border-b border-navy-600 pb-2">
-                    Billing Information
-                  </h4>
-                  
-                  <div className="space-y-4">
-                    {/* Personal Information */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="name" className="block text-gray-300 text-xs mb-1">
-                          Full Name <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          id="name"
-                          name="name"
-                          type="text"
-                          value={billingDetails.name}
-                          onChange={handleBillingInputChange}
-                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="email" className="block text-gray-300 text-xs mb-1">
-                          Email <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          id="email"
-                          name="email"
-                          type="email"
-                          value={billingDetails.email}
-                          onChange={handleBillingInputChange}
-                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          required
-                        />
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="phone" className="block text-gray-300 text-xs mb-1">
-                        Phone Number
-                      </label>
-                      <input
-                        id="phone"
-                        name="phone"
-                        type="tel"
-                        value={billingDetails.phone}
-                        onChange={handleBillingInputChange}
-                        className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                      />
-                    </div>
-                    
-                    {/* Address Information */}
-                    <div>
-                      <label htmlFor="address.line1" className="block text-gray-300 text-xs mb-1">
-                        Address Line 1 <span className="text-red-400">*</span>
-                      </label>
-                      <input
-                        id="address.line1"
-                        name="address.line1"
-                        type="text"
-                        value={billingDetails.address.line1}
-                        onChange={handleBillingInputChange}
-                        className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                        required
-                      />
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="address.line2" className="block text-gray-300 text-xs mb-1">
-                        Address Line 2
-                      </label>
-                      <input
-                        id="address.line2"
-                        name="address.line2"
-                        type="text"
-                        value={billingDetails.address.line2 || ''}
-                        onChange={handleBillingInputChange}
-                        className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                      />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="address.country" className="block text-gray-300 text-xs mb-1">
-                          Country <span className="text-red-400">*</span>
-                        </label>
-                        <select
-                          id="address.country"
-                          name="address.country"
-                          value={billingDetails.address.country}
-                          onChange={handleBillingInputChange}
-                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          required
-                        >
-                          {COUNTRIES.map(country => (
-                            <option key={country.code} value={country.code}>
-                              {country.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor="address.postal_code" className="block text-gray-300 text-xs mb-1">
-                          {selectedCountry?.postalCodeLabel || 'Postal Code'} <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          id="address.postal_code"
-                          name="address.postal_code"
-                          type="text"
-                          value={billingDetails.address.postal_code}
-                          onChange={handleBillingInputChange}
-                          placeholder={selectedCountry?.postalCodePlaceholder}
-                          pattern={selectedCountry?.postalCodePattern}
-                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          required
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="address.city" className="block text-gray-300 text-xs mb-1">
-                          City <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          id="address.city"
-                          name="address.city"
-                          type="text"
-                          value={billingDetails.address.city}
-                          onChange={handleBillingInputChange}
-                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="address.state" className="block text-gray-300 text-xs mb-1">
-                          State/Province <span className="text-red-400">*</span>
-                        </label>
-                        <input
-                          id="address.state"
-                          name="address.state"
-                          type="text"
-                          value={billingDetails.address.state}
-                          onChange={handleBillingInputChange}
-                          className="bg-navy-700/80 w-full px-3 py-2 text-white border border-navy-600 rounded-md focus:outline-none focus:ring-2 focus:ring-gold-500"
-                          required
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                ) : null}
+              </>
             )}
           </div>
           
@@ -805,7 +739,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
             </button>
             <button
               type="submit"
-              disabled={!stripe || !clientSecret || (!selectedPaymentMethodId && !isManualPayment)}
+              disabled={!stripe || !clientSecret || (activeTab === 'saved' && !selectedPaymentMethodId)}
               className="px-6 py-2.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 rounded-md text-navy-900 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               <CreditCard className="w-4 h-4 mr-2" />
@@ -815,25 +749,26 @@ const StripePayment: React.FC<StripePaymentProps> = ({
         </form>
       </div>
       
-      {/* Confirmation Dialog */}
+      {/* Confirmation Dialog with scrollable content */}
       <AnimatePresence>
         {showConfirmDialog && (
           <motion.div 
-            className="fixed inset-0 flex items-center justify-center z-50 px-4"
+            className="fixed inset-0 flex items-center justify-center z-50 px-4 py-6 overflow-y-auto"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <div className="absolute inset-0 bg-black/70" onClick={() => setShowConfirmDialog(false)}></div>
             <motion.div 
-              className="bg-navy-800 border border-navy-600 rounded-lg p-6 w-full max-w-md relative z-10 shadow-2xl"
+              className="bg-navy-800 border border-navy-600 rounded-lg p-6 w-full max-w-md relative z-10 shadow-2xl my-8 max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
             >
               <button 
-                className="absolute top-3 right-3 text-navy-400 hover:text-white"
+                className="absolute top-3 right-3 text-navy-400 hover:text-white p-1 bg-navy-700 rounded-full"
                 onClick={() => setShowConfirmDialog(false)}
+                aria-label="Close dialog"
               >
                 <X size={18} />
               </button>
@@ -852,7 +787,7 @@ const StripePayment: React.FC<StripePaymentProps> = ({
                 <div className="flex justify-between">
                   <span className="text-navy-300">Payment Method:</span>
                   <span className="text-white">
-                    {isManualPayment 
+                    {activeTab === 'new' 
                       ? 'New Card' 
                       : `${formatCardBrand(paymentMethods.find(m => m.id === selectedPaymentMethodId)?.brand || '')} •••• 
                       ${paymentMethods.find(m => m.id === selectedPaymentMethodId)?.last4 || ''}`

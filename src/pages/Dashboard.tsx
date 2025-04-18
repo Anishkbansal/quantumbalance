@@ -1084,10 +1084,7 @@ const Dashboard = () => {
           <div className="mt-4 p-4 bg-navy-750 rounded border border-navy-600 max-w-lg w-full">
             <h4 className="text-gold-500 font-semibold mb-2">Diagnostic Information</h4>
             <div className="text-xs text-navy-300 space-y-1">
-              <p>User ID: {user?._id || 'Not available'}</p>
-              <p>Package Type (user object): {user?.packageType || 'none'}</p>
-              <p>Auth Token Present: {localStorage.getItem('token') ? 'Yes' : 'No'}</p>
-              <p>API URL: {API_URL}/packages/user/active</p>
+              <p>if you bought a package and dont see it , try refreshing.</p>
               <div className="flex space-x-2 mt-2">
                 <button 
                   onClick={fetchActivePackage}
