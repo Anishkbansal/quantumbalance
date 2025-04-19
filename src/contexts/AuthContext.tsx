@@ -358,11 +358,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Admin verification function
+  // Verify admin login with OTP
   const verifyAdminLogin = async (email: string, otp: string) => {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log("Before verification:", { 
+        requiresAdminVerification, 
+        pendingAdminEmail, 
+        userIsAdmin: user?.isAdmin,
+        token: !!localStorage.getItem('token')
+      });
 
       const response = await axios.post(`${API_URL}/auth/admin/verify-otp`, {
         email,
@@ -370,21 +377,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (response.data.success) {
-        // Update user data with verified status
+        console.log("Admin verification successful", response.data);
+        
+        // Store token in localStorage BEFORE updating state
+        // This ensures the token is available for subsequent navigation
+        if (response.data.token) {
+          console.log("Setting token in localStorage");
+          localStorage.setItem('token', response.data.token);
+          // Set default Authorization header for future requests
+          axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
+        }
+        
+        // Now update user data and state flags
         setUser(response.data.user);
         setRequiresAdminVerification(false);
         setPendingAdminEmail(null);
         
-        // Store token in localStorage if it's returned from the API
-        if (response.data.token) {
-          localStorage.setItem('token', response.data.token);
-          // Set default Authorization header for future requests
-          axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
+        // Double-check token is properly stored
+        const storedToken = localStorage.getItem('token');
+        console.log("Token verification:", {
+          tokenReceived: !!response.data.token,
+          tokenStored: !!storedToken,
+          tokenMatches: storedToken === response.data.token
+        });
+        
+        console.log("After verification:", { 
+          requiresAdminVerification: false, 
+          pendingAdminEmail: null, 
+          userIsAdmin: response.data.user?.isAdmin,
+          token: !!localStorage.getItem('token')
+        });
+        
+        // One final attempt to make sure axios default headers are set
+        if (storedToken) {
+          console.log("Reinforcing axios Authorization header");
+          axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
         }
       }
       
       return response.data;
     } catch (err: any) {
+      console.error("Admin verification error:", err);
       setError(err.response?.data?.message || 'Admin verification failed');
       throw err;
     } finally {

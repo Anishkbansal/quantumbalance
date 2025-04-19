@@ -427,6 +427,87 @@ export const notifyAdminLogin = async (adminUser, logoutToken) => {
   return sgMail.send(msg);
 };
 
+/**
+ * Send password reset OTP email
+ * @param {string} userEmail - User's email address
+ * @param {string} name - User's name
+ * @param {string} resetCode - OTP code for password reset
+ * @returns {Promise} - SendGrid API response
+ */
+export const sendPasswordResetOTP = async (userEmail, name, resetCode) => {
+  const msg = {
+    to: userEmail,
+    from: VERIFIED_SENDER,
+    subject: 'Reset Your Password - Quantum Balance',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #2c3e50;">Quantum Balance</h2>
+        </div>
+        <div style="margin-bottom: 30px;">
+          <h3 style="color: #2c3e50;">Hello ${name},</h3>
+          <p>You recently requested to reset your password. Please use the verification code below to complete the process:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0;">
+            <h2 style="margin: 0; color: #2c3e50; letter-spacing: 5px;">${resetCode}</h2>
+          </div>
+          <p>This code will expire in 1 hour for security reasons.</p>
+          <p>If you did not request a password reset, please ignore this email and your password will remain unchanged.</p>
+        </div>
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 20px; font-size: 12px; color: #7f8c8d;">
+          <p>This is an automated security message, please do not reply to this email.</p>
+          <p>&copy; ${new Date().getFullYear()} Quantum Balance. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  };
+
+  return sgMail.send(msg);
+};
+
+/**
+ * Send admin password reset verification email
+ * @param {string} adminEmail - Admin's email address
+ * @param {string} name - Admin's name
+ * @param {string} resetCode - The verification code for password reset
+ * @param {string} logoutToken - Token to logout all admins if unauthorized
+ * @returns {Promise} - SendGrid API response
+ */
+export const sendAdminPasswordResetOTP = async (adminEmail, name, resetCode, logoutToken) => {
+  const logoutUrl = `${process.env.SITE_URL || 'https://quantumbalance.co.uk'}/api/auth/admin/logout-all/${logoutToken}`;
+  
+  const msg = {
+    to: adminEmail,
+    from: VERIFIED_SENDER,
+    subject: 'Password Reset Verification - Quantum Balance',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #2c3e50;">Quantum Balance</h2>
+          <p style="color: #e74c3c; font-weight: bold;">PASSWORD RESET VERIFICATION</p>
+        </div>
+        <div style="margin-bottom: 30px;">
+          <h3 style="color: #2c3e50;">Hello ${name},</h3>
+          <p>We received a request to reset your admin account password. To verify this request, please use the code below:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0;">
+            <h2 style="margin: 0; color: #2c3e50; letter-spacing: 5px;">${resetCode}</h2>
+          </div>
+          <p>This code will expire in 1 hour for security reasons.</p>
+          <p><strong>If you didn't request a password reset</strong>, someone might be trying to access your account. For security, you can log out all active admin sessions:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${logoutUrl}" style="background-color: #e74c3c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">FORCE LOGOUT ALL ADMINS</a>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #e0e0e0; padding-top: 20px; font-size: 12px; color: #7f8c8d;">
+          <p>This is an automated security message, please do not reply to this email.</p>
+          <p>&copy; ${new Date().getFullYear()} Quantum Balance. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  };
+
+  return sgMail.send(msg);
+};
+
 export default {
   createCustomEmailTemplate,
   sendEmail,
@@ -438,5 +519,7 @@ export default {
   sendPaymentConfirmation,
   sendPaymentNotificationToAdmin,
   sendAdminLoginVerification,
-  notifyAdminLogin
+  notifyAdminLogin,
+  sendPasswordResetOTP,
+  sendAdminPasswordResetOTP
 }; 

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Music, ChevronDown, ChevronUp } from 'lucide-react';
 import AudioCard from '../audio/AudioCard';
 import { API_URL } from '../../config/constants';
+import { globalAudioManager } from '../audio/AudioPlayer';
 
 interface AudioFile {
   _id: string;
@@ -15,10 +16,9 @@ interface AudioFile {
 
 interface SonicLibraryProps {
   isPremium?: boolean;
-  onPlayAudio?: (audioPath: string, audioTitle: string) => void;
 }
 
-const SonicLibrary: React.FC<SonicLibraryProps> = ({ isPremium = false, onPlayAudio }) => {
+const SonicLibrary: React.FC<SonicLibraryProps> = ({ isPremium = false }) => {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
@@ -147,20 +147,20 @@ const SonicLibrary: React.FC<SonicLibraryProps> = ({ isPremium = false, onPlayAu
   // Handle when an audio starts playing
   const handleAudioStartPlaying = (audioId: string) => {
     setCurrentlyPlaying(audioId);
-    // Find the file and pass it to onPlayAudio if provided
-    if (onPlayAudio) {
-      const file = audioFiles.find(file => file._id === audioId);
-      if (file) {
-        const audioPath = `${API_URL}/audio-files/${audioId}`;
-        onPlayAudio(audioPath, file.name);
-      }
-    }
   };
 
   // Handle when an audio stops playing
   const handleAudioStopPlaying = () => {
     setCurrentlyPlaying(null);
   };
+
+  // Effect to stop audio when component unmounts or tab changes
+  useEffect(() => {
+    return () => {
+      // Stop any playing audio when component unmounts
+      globalAudioManager.stop();
+    };
+  }, []);
 
   // If not premium, show upgrade message
   if (!isPremium) {

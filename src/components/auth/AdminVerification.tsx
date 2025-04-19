@@ -28,8 +28,31 @@ const AdminVerification: React.FC = () => {
   
   // Redirect to admin dashboard after successful verification
   useEffect(() => {
+    console.log("Auth state:", { 
+      user, 
+      isAdmin: user?.isAdmin, 
+      requiresAdminVerification,
+      token: !!localStorage.getItem('token') 
+    });
+    
     if (user && user.isAdmin && !requiresAdminVerification) {
-      navigate('/admin');
+      console.log("Redirecting admin to user management page");
+      
+      // Use a direct window location change instead of React Router
+      // This ensures a full page reload with the new auth state
+      setTimeout(() => {
+        console.log("Actually navigating to /admin/users now");
+        // Try two different approaches - first navigate, then direct URL change if needed
+        navigate('/admin/users', { replace: true });
+        
+        // As a backup, use direct location change after another short delay
+        setTimeout(() => {
+          if (window.location.pathname !== '/admin/users') {
+            console.log("Forcing direct URL navigation");
+            window.location.href = '/admin/users';
+          }
+        }, 300);
+      }, 300);
     }
   }, [user, requiresAdminVerification, navigate]);
   
@@ -46,7 +69,31 @@ const AdminVerification: React.FC = () => {
     
     try {
       if (pendingAdminEmail) {
-        await verifyAdminLogin(pendingAdminEmail, verificationCode);
+        console.log("Submitting verification code", { pendingAdminEmail, codeLength: verificationCode.length });
+        
+        // Simply await the function, the context state will be updated internally
+        const result = await verifyAdminLogin(pendingAdminEmail, verificationCode);
+        console.log("Verification result:", result);
+        
+        // Check if token was actually stored in localStorage
+        console.log("Token stored:", !!localStorage.getItem('token'));
+        
+        // Force navigation if user is verified but redirect doesn't happen
+        setTimeout(() => {
+          console.log("Force navigation attempt", {
+            user,
+            isAdmin: user?.isAdmin,
+            requiresAdminVerification,
+            token: !!localStorage.getItem('token'),
+            currentPath: window.location.pathname
+          });
+          
+          // Final fallback - force direct URL navigation
+          if (window.location.pathname !== '/admin/users') {
+            console.log("Forcing direct URL navigation from submit handler");
+            window.location.href = '/admin/users';
+          }
+        }, 1000);
       }
     } catch (err) {
       console.error('Verification error:', err);

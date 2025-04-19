@@ -1578,12 +1578,12 @@ const Dashboard = () => {
           {activeTab === 'prescriptions' && renderPrescriptionsSection()}
           {activeTab === 'wellness' && <WellnessTracker />}
           {activeTab === 'messages' && renderMessagesSection()}
-          {activeTab === 'sonic-library' && <SonicLibrary onPlayAudio={handlePlayAudio} />}
+          {activeTab === 'sonic-library' && <SonicLibrary isPremium={user?.packageType === 'premium'} />}
         </div>
       </div>
       
-      {/* Audio Player */}
-      {currentlyPlaying && (
+      {/* Audio Player - Only shown when playing prescriptions audio */}
+      {activeTab !== 'sonic-library' && currentlyPlaying && (
         <div className="fixed bottom-0 left-0 right-0 bg-navy-800 border-t border-navy-700 p-3 sm:p-4">
           <div className="max-w-7xl mx-auto">
             <div className="flex flex-col sm:flex-row sm:items-center">

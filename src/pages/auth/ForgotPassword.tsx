@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
+import ResetPasswordWithOTP from '../../components/auth/ResetPasswordWithOTP';
 
 const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [showOtpForm, setShowOtpForm] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   
   const validateEmail = (email: string) => {
     return /\S+@\S+\.\S+/.test(email);
@@ -35,7 +37,12 @@ const ForgotPassword: React.FC = () => {
       const response = await axios.post('/api/auth/forgot-password', { email });
       
       if (response.data.success) {
-        setSuccess(true);
+        // Show OTP form instead of success message
+        setShowOtpForm(true);
+        // Set isAdmin if the user is an admin (from backend response)
+        if (response.data.isAdmin) {
+          setIsAdmin(response.data.isAdmin);
+        }
       } else {
         setError(response.data.message || 'Failed to send reset email');
       }
@@ -47,44 +54,31 @@ const ForgotPassword: React.FC = () => {
     }
   };
   
+  const goBackToEmail = () => {
+    setShowOtpForm(false);
+    setIsAdmin(false);
+    setError(null);
+  };
+  
   return (
     <div className="min-h-screen flex items-center justify-center bg-navy-900 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white">Reset Your Password</h1>
           <p className="text-navy-300 mt-2">
-            Enter your email address and we'll send you a link to reset your password
+            {!showOtpForm 
+              ? 'Enter your email address and we\'ll send you a verification code'
+              : 'Enter the verification code sent to your email'}
           </p>
         </div>
         
         <div className="bg-navy-800 rounded-lg p-8 shadow-lg border border-navy-700">
-          {success ? (
-            <div className="text-center">
-              <div className="flex items-center justify-center w-16 h-16 mx-auto rounded-full bg-green-900/30 mb-4">
-                <CheckCircle className="h-8 w-8 text-green-400" />
-              </div>
-              <h2 className="text-xl font-semibold text-white mb-2">Check Your Email</h2>
-              <p className="text-navy-300 mb-6">
-                We've sent a password reset link to <span className="text-white font-medium">{email}</span>. 
-                The link will expire in 1 hour.
-              </p>
-              <p className="text-navy-400 text-sm mb-6">
-                If you don't see the email, please check your spam folder or 
-                <button 
-                  onClick={handleSubmit}
-                  className="text-gold-500 hover:text-gold-400 font-medium ml-1"
-                  disabled={loading}
-                >
-                  try again
-                </button>.
-              </p>
-              <Link 
-                to="/login" 
-                className="text-gold-500 hover:text-gold-400 font-medium"
-              >
-                Return to Login
-              </Link>
-            </div>
+          {showOtpForm ? (
+            <ResetPasswordWithOTP 
+              email={email} 
+              isAdmin={isAdmin}
+              onBack={goBackToEmail}
+            />
           ) : (
             <>
               {error && (
@@ -124,10 +118,10 @@ const ForgotPassword: React.FC = () => {
                     {loading ? (
                       <>
                         <div className="animate-spin h-5 w-5 border-2 border-navy-900 border-t-transparent rounded-full mr-2"></div>
-                        Sending Reset Link...
+                        Sending Verification Code...
                       </>
                     ) : (
-                      'Send Reset Link'
+                      'Send Verification Code'
                     )}
                   </button>
                 </div>

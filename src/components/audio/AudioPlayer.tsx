@@ -1,6 +1,58 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause } from 'lucide-react';
 
+// Global audio manager to ensure only one audio plays at a time
+export const globalAudioManager = {
+  currentAudio: null as HTMLAudioElement | null,
+  currentId: null as string | null,
+  listeners: [] as Function[],
+  
+  play(audio: HTMLAudioElement, id: string) {
+    // Stop current playing audio if any
+    if (this.currentAudio && this.currentAudio !== audio) {
+      this.currentAudio.pause();
+    }
+    
+    // Set new current audio
+    this.currentAudio = audio;
+    this.currentId = id;
+    
+    // Notify listeners
+    this.notifyListeners();
+  },
+  
+  stop() {
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+    }
+    this.currentAudio = null;
+    this.currentId = null;
+    
+    // Notify listeners
+    this.notifyListeners();
+  },
+  
+  addListener(callback: Function) {
+    this.listeners.push(callback);
+    return () => {
+      this.listeners = this.listeners.filter(listener => listener !== callback);
+    };
+  },
+  
+  notifyListeners() {
+    this.listeners.forEach(listener => listener(this.currentId));
+  },
+  
+  isPlaying(id: string) {
+    return this.currentId === id && this.currentAudio && !this.currentAudio.paused;
+  }
+};
+
+// Make it accessible globally for easier cross-component access
+if (typeof window !== 'undefined') {
+  (window as any).globalAudioManager = globalAudioManager;
+}
+
 interface AudioPlayerProps {
   audioUrl: string;
   audioTitle: string;
@@ -20,7 +72,9 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [isLooping, setIsLooping] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioId = useRef<string>(audioUrl); // Use the URL as a unique ID
 
+  // Setup audio and global audio manager listeners
   useEffect(() => {
     // Create audio element
     const audio = new Audio();
@@ -41,6 +95,12 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     // Set the audio source
     audio.src = audioUrl;
     
+    // Add listener for global audio manager
+    const removeListener = globalAudioManager.addListener((playingId: string | null) => {
+      // Update isPlaying state based on global audio manager
+      setIsPlaying(playingId === audioId.current);
+    });
+    
     // Clean up on unmount
     return () => {
       if (audio) {
@@ -49,6 +109,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         audio.removeEventListener('timeupdate', handleTimeUpdate);
         audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
         audio.removeEventListener('error', handleError);
+        
+        // Remove global audio manager listener
+        removeListener();
+        
+        // If this is the current playing audio, stop it
+        if (globalAudioManager.currentId === audioId.current) {
+          globalAudioManager.stop();
+        }
       }
     };
   }, [audioUrl]);
@@ -59,11 +127,13 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
     
     if (isPlaying) {
       audioRef.current.pause();
+      globalAudioManager.stop();
       setIsPlaying(false);
       if (onPause) onPause();
     } else {
       audioRef.current.play()
         .then(() => {
+          globalAudioManager.play(audioRef.current!, audioId.current);
           setIsPlaying(true);
           if (onPlay) onPlay();
         })
@@ -77,6 +147,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   // Handle audio ended event
   const handleEnded = () => {
     if (!isLooping) {
+      globalAudioManager.stop();
       setIsPlaying(false);
       setAudioProgress(0);
     }

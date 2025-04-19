@@ -39,7 +39,6 @@ import Prescriptions from './pages/Prescriptions';
 import WellnessLogs from './pages/WellnessLogs';
 import Analysis from './pages/Analysis';
 import ForgotPassword from './pages/auth/ForgotPassword';
-import ResetPassword from './pages/auth/ResetPassword';
 
 const App: React.FC = () => {
   return (
@@ -60,18 +59,16 @@ const App: React.FC = () => {
               <Route path="/login" element={<Login />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password/:token" element={<ResetPassword />} />
               
               {/* Authentication required routes */}
               <Route element={<ProtectedRoute />}>
-                {/* Routes that also require email verification */}
                 <Route element={<VerificationRequired />}>
-                  <Route path="/health-questionnaire" element={<HealthQuestionnaire />} />
-                  <Route path="/questionnaire-history" element={<QuestionnaireHistory />} />
-                  <Route path="/questionnaire-details/:id" element={<QuestionnaireDetails />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/profile/payment-methods" element={<PaymentMethods />} />
+                  <Route path="/health-questionnaire" element={<HealthQuestionnaire />} />
+                  <Route path="/questionnaire-history" element={<QuestionnaireHistory />} />
+                  <Route path="/questionnaire/:id" element={<QuestionnaireDetails />} />
                   <Route path="/prescriptions" element={<Prescriptions />} />
                   <Route path="/wellness-logs" element={<WellnessLogs />} />
                   <Route path="/analysis" element={<Analysis />} />
@@ -80,15 +77,15 @@ const App: React.FC = () => {
               
               {/* Admin routes */}
               <Route element={<AdminProtectedRoute />}>
-                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin/dashboard" element={<AdminDashboard />} />
                 <Route path="/admin/users" element={<UserManagement />} />
-                <Route path="/admin/create-user" element={<CreateUser />} />
+                <Route path="/admin/users/create" element={<CreateUser />} />
                 <Route path="/admin/messages" element={<AdminMessages />} />
                 <Route path="/admin/sonic-library" element={<SonicLibrary />} />
                 <Route path="/admin/gift-cards" element={<AdminGiftCards />} />
               </Route>
               
-              {/* 404 route */}
+              {/* Catch all route - 404 */}
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>

@@ -6,7 +6,7 @@ import Prescription from '../models/Prescription.js';
 import HealthQuestionnaire from '../models/HealthQuestionnaire.js';
 import mongoose from 'mongoose';
 import WellnessEntry from '../models/WellnessEntry.js';
-import { sendVerificationEmail, notifyAllAdmins, sendAdminLoginVerification, notifyAdminLogin } from '../utils/emailService.js';
+import { sendVerificationEmail, notifyAllAdmins, sendAdminLoginVerification, notifyAdminLogin, sendPasswordResetOTP, sendAdminPasswordResetOTP } from '../utils/emailService.js';
 import crypto from 'crypto';
 
 // Generate JWT token
@@ -1016,44 +1016,54 @@ export const forgotPassword = async (req, res) => {
       // for security reasons
       return res.status(200).json({ 
         success: true, 
-        message: 'If this email exists in our system, a password reset link has been sent.' 
+        message: 'If this email exists in our system, a password reset code has been sent.' 
       });
     }
 
-    // Generate password reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
+    // Generate OTP code instead of token
+    const resetCode = generateVerificationCode();
     
-    // Set token hash and expiration (1 hour from now)
+    // Store hashed OTP and expiration (1 hour from now)
     user.resetPasswordToken = crypto
       .createHash('sha256')
-      .update(resetToken)
+      .update(resetCode)
       .digest('hex');
       
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
     
     await user.save();
     
-    // Create reset URL
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
-    
-    // Send reset email using the emailService utility
+    // Send reset email with OTP code
     try {
-      await sendVerificationEmail(
-        user.email,
-        'Reset Your Password',
-        `You are receiving this email because you (or someone else) has requested the reset of a password. 
-        Please click on the following link, or paste this into your browser to complete the process:
+      // Use different email templates for regular users and admins
+      if (user.isAdmin) {
+        // For admin users, generate a logout token for emergency security
+        const logoutToken = generateSecureToken();
+        adminLogoutTokens.set(logoutToken, {
+          expires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+          createdBy: user._id
+        });
         
-        ${resetUrl}
-        
-        This link will expire in 1 hour.
-        
-        If you did not request this, please ignore this email and your password will remain unchanged.`
-      );
+        // Use admin-specific password reset template
+        await sendAdminPasswordResetOTP(
+          user.email,
+          user.name || 'Admin',
+          resetCode,
+          logoutToken
+        );
+      } else {
+        // For regular users, use password reset OTP email
+        await sendPasswordResetOTP(
+          user.email,
+          user.name || 'User',
+          resetCode
+        );
+      }
       
       return res.status(200).json({
         success: true,
-        message: 'Password reset email sent'
+        message: 'Password reset code sent',
+        isAdmin: !!user.isAdmin
       });
     } catch (emailError) {
       console.error('Error sending reset email:', emailError);
@@ -1078,34 +1088,40 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
-// Reset Password - process password reset
+// Reset Password - verify OTP and reset password
 export const resetPassword = async (req, res) => {
   try {
-    const { token, password } = req.body;
+    const { email, code, password } = req.body;
     
-    if (!token || !password) {
+    if (!email || !code || !password) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Please provide both token and new password' 
+        message: 'Please provide email, verification code and new password' 
       });
     }
     
-    // Hash the token from the URL to compare with hashed token in DB
-    const resetPasswordToken = crypto
-      .createHash('sha256')
-      .update(token)
-      .digest('hex');
-    
-    // Find user with this token and check if token is still valid
-    const user = await User.findOne({
-      resetPasswordToken,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
+    // Find user by email
+    const user = await User.findOne({ email });
     
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: 'Password reset token is invalid or has expired'
+        message: 'Invalid email address'
+      });
+    }
+    
+    // Hash the code to compare with hashed token in DB
+    const hashedCode = crypto
+      .createHash('sha256')
+      .update(code)
+      .digest('hex');
+    
+    // Check if code matches and is still valid
+    if (user.resetPasswordToken !== hashedCode || 
+        user.resetPasswordExpires < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code'
       });
     }
     
