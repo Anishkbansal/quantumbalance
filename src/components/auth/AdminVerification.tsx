@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, Shield, MailCheck, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const AdminVerification: React.FC = () => {
+  const navigate = useNavigate();
   const [verificationCode, setVerificationCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
@@ -13,7 +15,9 @@ const AdminVerification: React.FC = () => {
     error, 
     verifyAdminLogin, 
     resendAdminVerificationCode, 
-    pendingAdminEmail 
+    pendingAdminEmail,
+    requiresAdminVerification,
+    user
   } = useAuth();
   
   useEffect(() => {
@@ -21,6 +25,13 @@ const AdminVerification: React.FC = () => {
       setCodeExpired(true);
     }
   }, [error]);
+  
+  // Redirect to admin dashboard after successful verification
+  useEffect(() => {
+    if (user && user.isAdmin && !requiresAdminVerification) {
+      navigate('/admin');
+    }
+  }, [user, requiresAdminVerification, navigate]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

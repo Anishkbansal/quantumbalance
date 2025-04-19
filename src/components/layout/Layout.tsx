@@ -41,6 +41,7 @@ const Layout = () => {
     { name: 'Home', href: '/', icon: Waveform, publicOnly: true },
     { name: 'User Management', href: '/admin/users', icon: Users },
     { name: 'Sonic Library', href: '/admin/sonic-library', icon: Music },
+    { name: 'Gift Cards', href: '/admin/gift-cards', icon: Gift },
     { name: 'Create User', href: '/admin/create-user', icon: User },
     { name: 'Messages', href: '/admin/messages', icon: MessageSquare },
     { name: 'Profile', href: '/profile', icon: User },

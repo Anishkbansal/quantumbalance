@@ -23,6 +23,7 @@ import CreateUser from './pages/admin/CreateUser';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminMessages from './pages/admin/Messages';
 import SonicLibrary from './pages/admin/SonicLibrary';
+import AdminGiftCards from './pages/admin/AdminGiftCards';
 import NotFound from './pages/NotFound';
 import About from './pages/About';
 import ScientificEvidence from './pages/ScientificEvidence';
@@ -84,6 +85,7 @@ const App: React.FC = () => {
                 <Route path="/admin/create-user" element={<CreateUser />} />
                 <Route path="/admin/messages" element={<AdminMessages />} />
                 <Route path="/admin/sonic-library" element={<SonicLibrary />} />
+                <Route path="/admin/gift-cards" element={<AdminGiftCards />} />
               </Route>
               
               {/* 404 route */}
